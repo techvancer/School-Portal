@@ -1,0 +1,397 @@
+import { getErrorMessage } from '../../lib/langHelper';
+import { t, getField, getStudentName as _getStudentName } from '../../lib/langHelper';
+import { useLang } from '../../context/LanguageContext';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ClipboardList, Trash2, AlertTriangle, CheckCircle, Search, Filter } from 'lucide-react';
+import Breadcrumb from '../../components/Breadcrumb';
+import FilterBar from '../../components/FilterBar';
+import { useToast } from '../../context/ToastContext';
+import { useSortable } from '../../lib/useSortable';
+import { useColumnSearch } from '../../lib/useColumnSearch';
+import SortableTh from '../../components/SortableTh';
+import { useAuth } from '../../context/AuthContext';
+import { rest, insert, update, remove, dbQuery } from '../../lib/supabaseClient';
+import { useFilterData } from '../../lib/useFilterData';
+import { buildFilters, EMPTY_FILTER } from '../../lib/helpers';
+
+export default function AdminExams() {
+    const { lang, isAr } = useLang();
+
+    const { addToast } = useToast();
+    const location = useLocation();
+    const { user } = useAuth();
+    const filterData = useFilterData(user, lang);
+
+    const [rows, setRows] = useState([]);
+    const { sorted: sortedRows, sortCol, sortDir, handleSort } = useSortable(rows, 'examName');
+    const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch();
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [applied, setApplied] = useState({ ...EMPTY_FILTER, employeeid: 'All' });
+    const [examTypes, setExamTypes] = useState([]);
+    const [deleteModal, setDeleteModal] = useState({ show: false, row: null });
+    const [detailModal, setDetailModal] = useState({ show: false, row: null });
+
+    const fetchData = useCallback(async (filters = {}) => {
+        if (!user) return;
+        try {
+            setLoading(true);
+            const f = (key, col) => filters[key] && filters[key] !== 'All' ? { [col || key]: `eq.${filters[key]}` } : {};
+            const examQueryParams = {
+                schoolid: `eq.${user.schoolid}`,
+                branchid: `eq.${user.branchid}`,
+                select: '*',
+                ...f('classid'), ...f('sectionid'), ...f('subjectid'), ...f('examid'),
+                ...f('curriculumid'), ...f('divisionid'), ...f('stageid'),
+                ...(filters.employeeid && filters.employeeid !== 'All' ? { employeeid: `eq.${filters.employeeid}` } : {}),
+            };
+            const [stuExams, examList, clTbl, secRows, subList, empList, qExamRows, answersData] = await Promise.all([
+                rest('students_exams_employees_section_subjects_classes_semisters_cur', examQueryParams),
+                rest('exams_tbl', { select: '*' }),
+                rest('classes_tbl', { select: '*' }),
+                rest('sections_tbl', { select: '*' }),
+                rest('subjects_tbl', { select: '*' }),
+                rest('employee_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
+                rest('questions_exams_employee_subjects_sections_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid,employeeid,questionid,status' }).catch(() => []),
+                rest('studentanswers_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid' }).catch(() => []),
+            ]);
+
+            // Build status map from student answers: if exam has answers → 'marked', else 'new'
+            const answersMap = {};
+            (answersData || []).forEach(ans => {
+                const k = `${ans.examid}-${ans.classid}-${ans.sectionid}-${ans.subjectid}`;
+                answersMap[k] = true;
+            });
+
+            // Deduplicate: one row per examid+classid+sectionid+subjectid+employeeid
+            const seen = new Map();
+            stuExams.forEach(r => {
+                const key = `${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}-${r.employeeid}`;
+                if (!seen.has(key)) {
+                    const exam = examList.find(e => e.examid === r.examid);
+                    const cl = clTbl.find(c => c.classid === r.classid);
+                    const sec = secRows.find(s => s.sectionid === r.sectionid);
+                    const sub = subList.find(s => s.subjectid === r.subjectid);
+                    const emp = empList.find(e => e.employeeid === r.employeeid);
+
+                    const dbStatus = String(exam?.status || '').toLowerCase();
+                    const qExamRow = (qExamRows || []).find(q =>
+                        String(q.examid) === String(r.examid) &&
+                        String(q.classid) === String(r.classid) &&
+                        String(q.sectionid) === String(r.sectionid) &&
+                        String(q.subjectid) === String(r.subjectid) &&
+                        String(q.employeeid) === String(r.employeeid)
+                    );
+                    const qStatus = String(qExamRow?.status || '').toLowerCase();
+                    let examStatus;
+                    if (qStatus === 'cancelled' || dbStatus === 'cancelled') examStatus = 'cancelled';
+                    else if (qStatus === 'submitted' || dbStatus === 'submitted') examStatus = 'submitted';
+                    else if (['marked', 'completed', 'inprogress'].includes(qStatus) || ['marked', 'completed', 'inprogress'].includes(dbStatus) || answersMap[`${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}`]) examStatus = 'marked';
+                    else examStatus = 'new';
+
+                    seen.set(key, {
+                        _key: key,
+                        examid: r.examid,
+                        classid: r.classid,
+                        sectionid: r.sectionid,
+                        subjectid: r.subjectid,
+                        employeeid: r.employeeid,
+                        examName: lang === 'ar' ? (exam?.examname || exam?.examname_en || '—') : (exam?.examname_en || exam?.examname || '—'),
+                        examNameAr: exam?.examname || '',
+                        examNameEn: exam?.examname_en || '',
+                        classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname || '?',
+                        sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname || '?',
+                        subjectName: getField(sub, 'subjectname', 'Subjectname_en', lang) || '—',
+                        subjectNameAr: sub?.subjectname || '',
+                        subjectNameEn: sub?.Subjectname_en || '',
+                        teacherName: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename || '—',
+                        teacherEmail: emp?.employeeemail || '',
+                        studentCount: 0,
+                        examStatus: examStatus,
+                        totalmarks: exam?.totalmarks ?? exam?.total_marks ?? null,
+                        duration: exam?.duration ?? null,
+                        description: exam?.description ?? exam?.examdescription ?? null,
+                        semesterid: r.semisterid ?? r.semesterid ?? null,
+                        yearid: r.yearid ?? null,
+                        created_at: exam?.created_at ?? null,
+                    });
+                }
+                seen.get(key).studentCount++;
+            });
+
+            const enriched = [...seen.values()];
+            setRows(enriched);
+            const types = [...new Set(enriched.map(r => r.examName))].filter(Boolean);
+            setExamTypes(types);
+        } catch (e) { addToast(getErrorMessage(e, 'general'), 'error'); }
+        finally { setLoading(false); }
+    }, [user, lang]);
+
+
+    const [hasApplied, setHasApplied] = useState(false);
+    const appliedRef = useRef(applied);
+    appliedRef.current = applied;
+
+    useEffect(() => {
+        const navFilters = location.state && typeof location.state === 'object' ? location.state : null;
+        if (!navFilters || Array.isArray(navFilters) || Object.keys(navFilters).length === 0) return;
+        const merged = { ...EMPTY_FILTER, employeeid: 'All', ...navFilters };
+        setApplied(merged);
+        setHasApplied(true);
+        fetchData(merged);
+    }, [location.state, fetchData]);
+
+    const filtered = sortedRows.filter(r => {
+        const q = search.toLowerCase();
+        const matchSearch = !search ||
+            r.examName?.toLowerCase().includes(q) ||
+            r.subjectName?.toLowerCase().includes(q) ||
+            r.teacherName?.toLowerCase().includes(q) ||
+            r.classname?.includes(search);
+        const mc = applied.classid === 'All' || String(r.classid) === applied.classid;
+        const ms = applied.sectionid === 'All' || String(r.sectionid) === applied.sectionid;
+        const msub = applied.subjectid === 'All' || String(r.subjectid) === applied.subjectid;
+        const mex = applied.examid === 'All' || String(r.examid) === applied.examid;
+        const mem = applied.employeeid === 'All' || String(r.employeeid) === applied.employeeid;
+        return matchSearch && mc && ms && msub && mex && mem;
+    });
+    const columnFiltered = applyColumnSearch(filtered);
+
+    const handleDelete = async () => {
+        const row = deleteModal.row;
+        if (!row) return;
+        try {
+            await dbQuery(
+                `students_exams_employees_section_subjects_classes_semisters_cur` +
+                `?examid=eq.${row.examid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}` +
+                `&subjectid=eq.${row.subjectid}&employeeid=eq.${row.employeeid}`,
+                'DELETE'
+            );
+            addToast(t('examEntryDeleted', lang), 'success');
+            setDeleteModal({ show: false, row: null });
+            fetchData();
+        } catch (err) { addToast(getErrorMessage(err, 'general'), 'error'); }
+    };
+
+
+    useEffect(() => {
+        if (!hasApplied) return;
+        fetchData(appliedRef.current);
+    }, [lang, hasApplied, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return (
+        <div className="space-y-8 animate-fade-in pb-12">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a]">{t('examsCentral', lang)}</h1>
+                    <p className="text-[#64748b] text-sm font-medium">{t('manageExamsDesc', lang)}</p>
+                    <Breadcrumb />
+                </div>
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2.5 rounded-lg text-sm font-medium">
+                    <span className="text-base">ℹ️</span>
+                    {t('examsCreatedByTeachers', lang)}
+                </div>
+            </div>
+
+            {/* Filters */}
+            <FilterBar
+                filters={[...buildFilters(applied, filterData, {}, lang), { key: 'employeeid', label: t('teacher', lang), value: applied.employeeid ?? 'All', options: filterData.employees || [] }]}
+                appliedFilters={applied}
+
+                onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
+                onReset={vals => { setApplied({ ...vals, employeeid: 'All' }); setHasApplied(false); setRows([]); }}
+            />
+            <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 flex items-center gap-3">
+                <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
+                    <input type="text" placeholder={t('searchAdminExamsPlaceholder', lang)} className="input-field pl-10 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+            </div>
+
+            {/* Table */}
+            <div className="card overflow-hidden bg-white border-[#e2e8f0] rounded-xl shadow-sm">
+                <div className="p-6 border-b border-[#e2e8f0] bg-slate-50/50 flex items-center gap-3">
+                    <ClipboardList className="h-5 w-5 text-[#1d4ed8]" />
+                    <h2 className="text-base font-bold text-[#0f172a]">{t('examsDirectory', lang)}</h2>
+                    <span className="ml-auto text-xs text-[#94a3b8] font-medium">{columnFiltered.length} {t('exams', lang)}</span>
+                </div>
+                <div className="overflow-x-auto" dir={isAr ? 'rtl' : 'ltr'}>
+                    <table className={`w-full ${isAr ? 'text-right' : 'text-left'}`}>
+                        <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                            <tr className="text-[#64748b] text-xs font-bold uppercase tracking-wider">
+                                <SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}</SortableTh>
+                                <SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}</SortableTh>
+                                <SortableTh col="subjectName" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['subjectName']} isSearchOpen={activeSearch==='subjectName'} onSearchOpen={()=>setActiveSearch('subjectName')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectName','');}} onSearchChange={v=>setColumnSearch('subjectName',v)}>{t('subject', lang)}</SortableTh>
+                                <SortableTh col="examName" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['examName']} isSearchOpen={activeSearch==='examName'} onSearchOpen={()=>setActiveSearch('examName')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('examName','');}} onSearchChange={v=>setColumnSearch('examName',v)}>{t('exam', lang)}</SortableTh>
+                                <SortableTh col="teacherName" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['teacherName']} isSearchOpen={activeSearch==='teacherName'} onSearchOpen={()=>setActiveSearch('teacherName')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('teacherName','');}} onSearchChange={v=>setColumnSearch('teacherName',v)}>{t('teacher', lang)}</SortableTh>
+                                <SortableTh col="studentCount" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6">{t('students', lang)}</SortableTh>
+                                <SortableTh col="examStatus" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['examStatus']} isSearchOpen={activeSearch==='examStatus'} onSearchOpen={()=>setActiveSearch('examStatus')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('examStatus','');}} onSearchChange={v=>setColumnSearch('examStatus',v)}>{t('status', lang)}</SortableTh>
+                                <th className="px-6 py-4 text-xs font-bold text-[#64748b] uppercase tracking-wider text-right">{t('action', lang)}</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#e2e8f0]">
+                            {!hasApplied && (
+                                <tr><td colSpan={7} className="px-6 py-20 text-center text-[#94a3b8] font-medium">{t('pressApplyToLoad', lang)}</td></tr>
+                            )}
+                            {hasApplied && loading && (
+                                <tr><td colSpan={7} className="px-6 py-16 text-center text-[#94a3b8]">{t('loading', lang)}</td></tr>
+                            )}
+                            {hasApplied && !loading && columnFiltered.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="px-6 py-20 text-center">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <ClipboardList className="h-10 w-10 text-slate-200" />
+                                            <p className="text-slate-400 font-medium">{t('noData', lang)}</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                            {hasApplied && !loading && columnFiltered.length > 0 && (
+                                <AnimatePresence initial={false}>
+                                    {columnFiltered.map((row) => (
+                                        <motion.tr
+                                            key={row._key}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            className="hover:bg-blue-50/20 transition-colors"
+                                        >
+                                            <td className="px-4 py-3 text-center text-sm font-bold text-[#0f172a]">{t('class', lang)} {row.classname}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="inline-flex items-center justify-center w-8 h-8 bg-slate-100 rounded-lg text-xs font-black text-[#475569] border border-slate-200">
+                                                    {row.sectionname}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-sm text-[#475569] font-medium">{row.subjectName}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <div>
+                                                    <span className="text-sm font-bold text-[#0f172a]">{row.examName}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.teacherName}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="flex items-center gap-1.5 text-[#10b981] text-xs font-bold bg-green-50 px-2.5 py-1 rounded-full border border-green-100 w-fit">
+                                                    <CheckCircle className="h-3 w-3" /> {row.studentCount}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border capitalize ${
+                                                    row.examStatus === 'cancelled' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                    row.examStatus === 'submitted' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                                    row.examStatus === 'marked' || row.examStatus === 'completed' || row.examStatus === 'inprogress' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                    'bg-slate-50 text-slate-600 border-slate-200'
+                                                }`}>
+                                                    {row.examStatus === 'new' || !row.examStatus ? t('new', lang) :
+                                                     row.examStatus === 'marked' || row.examStatus === 'completed' || row.examStatus === 'inprogress' ? t('marked', lang) :
+                                                     row.examStatus === 'submitted' ? t('submitted', lang) :
+                                                     row.examStatus === 'cancelled' ? t('cancelled', lang) : row.examStatus}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => setDetailModal({ show: true, row })}
+                                                        className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100"
+                                                        title="View Details"
+                                                    >
+                                                        <Filter className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeleteModal({ show: true, row })}
+                                                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-100"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </motion.tr>
+                                    ))}
+                                </AnimatePresence>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="p-4 bg-slate-50/50 border-t border-[#e2e8f0] flex items-center">
+                    <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider mr-3">{t('total', lang)}</span>
+                    <div className="px-3 py-1 bg-white rounded-lg border border-[#e2e8f0] text-xs font-black text-[#0f172a] shadow-sm">{columnFiltered.length} {t('rows', lang)}</div>
+                </div>
+            </div>
+
+
+            {/* Exam Details Modal */}
+            <AnimatePresence>
+                {detailModal.show && detailModal.row && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={() => setDetailModal({ show: false, row: null })} />
+                        <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white rounded-2xl w-full max-w-lg shadow-2xl z-10 overflow-hidden relative">
+                            <div className="flex items-center justify-between px-6 py-4 bg-blue-50 border-b border-blue-100">
+                                <div>
+                                    <h3 className="text-lg font-bold text-[#1d4ed8]">{t('exam', lang)} {t('view', lang)}</h3>
+                                    <p className="text-xs text-blue-500 mt-0.5">{detailModal.row.examName}</p>
+                                </div>
+                                <button onClick={() => setDetailModal({ show: false, row: null })} className="p-2 rounded-lg text-blue-400 hover:text-blue-600 hover:bg-blue-100">
+                                    <ClipboardList className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-3">
+                                {[
+                                    { label: t('exam', lang), value: detailModal.row.examName },
+                                    { label: t('class', lang), value: `${t('class', lang)} ${detailModal.row.classname} — ${detailModal.row.sectionname}` },
+                                    { label: t('subject', lang), value: detailModal.row.subjectName },
+                                    { label: t('teacher', lang), value: detailModal.row.teacherName },
+                                    { label: t('status', lang), value: detailModal.row.examStatus ? (detailModal.row.examStatus.charAt(0).toUpperCase() + detailModal.row.examStatus.slice(1)) : '—' },
+                                    { label: t('students', lang), value: detailModal.row.studentCount },
+                                    detailModal.row.totalmarks != null && { label: t('totalMarks', lang), value: detailModal.row.totalmarks },
+                                    detailModal.row.duration != null && { label: 'Duration', value: `${detailModal.row.duration} min` },
+                                    detailModal.row.description && { label: 'Description', value: detailModal.row.description },
+                                ].filter(Boolean).map((item, i) => (
+                                    <div key={i} className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
+                                        <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider w-28 shrink-0 pt-0.5">{item.label}</span>
+                                        <span className="text-sm font-semibold text-[#0f172a]">{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                                <button onClick={() => setDetailModal({ show: false, row: null })} className="px-5 py-2 rounded-xl bg-[#1d4ed8] text-white text-sm font-bold hover:bg-[#1e40af]">{t('cancel', lang)}</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Delete Modal */}
+            <AnimatePresence>
+                {deleteModal.show && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={() => setDeleteModal({ show: false, row: null })} />
+                        <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }}
+                            className="bg-white rounded-2xl w-full max-w-sm shadow-2xl z-10 p-8 text-center relative">
+                            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <AlertTriangle size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-[#0f172a] mb-2">{t('deleteExamEntry', lang)}</h3>
+                            <p className="text-[#64748b] text-sm mb-8 leading-relaxed">
+                                {t('delete', lang)} <span className="font-bold text-[#0f172a]">{deleteModal.row?.examName}</span> —{' '}
+                                <span className="font-bold">{deleteModal.row?.subjectName}</span> {t('for', lang)} {t('grade', lang)}{' '}
+                                <span className="font-bold">{deleteModal.row?.classname}-{deleteModal.row?.sectionname}</span>?
+                            </p>
+                            <div className="flex gap-4">
+                                <button onClick={() => setDeleteModal({ show: false, row: null })} className="flex-1 py-3 font-bold text-slate-600 hover:bg-slate-50 rounded-xl">{t('cancel', lang)}</button>
+                                <button onClick={handleDelete} className="flex-1 py-3 font-bold bg-red-600 text-white hover:bg-red-700 rounded-xl">{t('delete', lang)}</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
