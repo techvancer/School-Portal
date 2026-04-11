@@ -3,6 +3,7 @@ import { useLang } from '../../context/LanguageContext';
 import { useState } from 'react';
 import { Search, User, Shield, GraduationCap, Key, Power, Loader2, CheckCircle, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import FilterBar from '../../components/FilterBar';
 import { motion } from 'framer-motion';
 import { useToast } from '../../context/ToastContext';
 import { useAppStore } from '../../data/store';
@@ -55,30 +56,26 @@ export default function AdminUserAccounts() {
                 <Breadcrumb />
             </div>
 
-            <div className="card bg-white p-6 rounded-xl flex flex-wrap gap-4 items-center border-[#e2e8f0]">
-                <div className="flex-1 min-w-[240px] relative">
+            <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 flex items-center gap-3">
+                <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94a3b8]" />
                     <input
                         type="text"
                         placeholder={isAr ? "بحث عن المستخدمين..." : "Search users..."}
-                        className="input-field pl-10 h-11"
+                        className="input-field pl-10 h-10 w-full"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-3">
-                    <select
-                        className="input-field h-11 px-4 min-w-[150px]"
-                        value={roleFilter}
-                        onChange={(e) => setRoleFilter(e.target.value)}
-                    >
-                        <option value="All">{t('allRoles', lang)}</option>
-                        <option value="Admin">{t('admin', lang)}</option>
-                        <option value="Supervisor">{t('supervisor', lang)}</option>
-                        <option value="Teacher">{t('teacher', lang)}</option>
-                    </select>
-                </div>
             </div>
+            <FilterBar
+                filters={[
+                    { key: 'role', label: t('role', lang), value: roleFilter, options: [{ value: 'All', label: t('allRoles', lang) }, { value: 'Admin', label: t('admin', lang) }, { value: 'Supervisor', label: t('supervisor', lang) }, { value: 'Teacher', label: t('teacher', lang) }] },
+                ]}
+                appliedFilters={{ role: roleFilter }}
+                onApply={(vals) => setRoleFilter(vals.role)}
+                onReset={() => setRoleFilter('All')}
+            />
 
             <div className="card bg-white overflow-hidden rounded-xl border-[#e2e8f0]">
                 <div className="overflow-x-auto">

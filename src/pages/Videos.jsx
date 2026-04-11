@@ -2,8 +2,9 @@ import { t, getField, getStudentName as _getStudentName } from '../lib/langHelpe
 import { useLang } from '../context/LanguageContext';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Video, Search, Loader2, ExternalLink, Plus, Save, X, Lock, Unlock, AlertCircle } from 'lucide-react';
+import { Video, Loader2, ExternalLink, Plus, Save, X, Lock, Unlock } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
+import FilterBar from '../components/FilterBar';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { insert, rest, dbQuery } from '../lib/supabaseClient';
@@ -22,12 +23,10 @@ export default function Videos() {
     const [examsData,      setExamsData]      = useState([]);
     const [semestersData,  setSemestersData]  = useState([]);
 
-    // Change 2 filter order: Classes → Section → Subject → Exam → Semester
-    const [selClass,    setSelClass]    = useState('');
-    const [selSection,  setSelSection]  = useState('');
-    const [selSubject,  setSelSubject]  = useState('');
-    const [selExam,     setSelExam]     = useState('');
-    const [selSemester, setSelSemester] = useState('');
+    // filterDraft tracks FilterBar's current selections (for cascade options loading)
+    const [filterDraft, setFilterDraft] = useState({});
+    // appliedRef holds the last applied filter values (for loadQuestions & langChanged)
+    const appliedRef = useRef(null);
 
     const [classOptions,    setClassOptions]    = useState([]);
     const [sectionOptions,  setSectionOptions]  = useState([]);
@@ -41,16 +40,14 @@ export default function Videos() {
     const [loading,      setLoading]      = useState(false);
     const [searched,     setSearched]     = useState(false);
     const [answeredKeys, setAnsweredKeys] = useState(new Set());
-    const [fieldErrors,  setFieldErrors]  = useState({});
 
-    // Change 14: unlock state
+    // unlock state for video URL editing
     const [editingId,   setEditingId]   = useState(null);
     const [editUrl,     setEditUrl]     = useState('');
     const [saving,      setSaving]      = useState(false);
     const [unlockedIds, setUnlockedIds] = useState(new Set());
 
-    const selStyle = { backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,backgroundRepeat:'no-repeat',backgroundPosition:'right 10px center',paddingRight:'2rem',appearance:'none' };
-
+    // Initial data load: assignments + lookup tables
     useEffect(() => {
         if (!user) return;
         (async () => {
@@ -80,44 +77,48 @@ export default function Videos() {
             setAssignments(asgn);
             const clOpts = [...new Map(asgn.map(a => [a.classid, a])).values()];
             setClassOptions(clOpts);
-            if (clOpts.length === 1) setSelClass(String(clOpts[0].classid));
+            // Auto-select is handled by FilterBar when classOptions has 1 item
         })();
     }, [user]);
 
     // Cascade: section options when class changes
     useEffect(() => {
-        setSelSection(''); setSelSubject(''); setSelExam(''); setSelSemester('');
-        if (!selClass) { setSectionOptions([]); setSubjectOptions([]); setExamOptions([]); setSemesterOptions([]); return; }
-        const filtered = assignments.filter(a => String(a.classid) === selClass);
+        const classid = filterDraft.classid;
+        setSectionOptions([]); setSubjectOptions([]); setExamOptions([]); setSemesterOptions([]);
+        if (!classid || classid === 'All') return;
+        const filtered = assignments.filter(a => String(a.classid) === classid);
         const secOpts = [...new Map(filtered.map(a => [a.sectionid, a])).values()];
         setSectionOptions(secOpts);
         setSubjectOptions([]);
-        if (secOpts.length === 1) setSelSection(String(secOpts[0].sectionid));
-    }, [selClass, assignments]);
+        // Auto-select is handled by FilterBar's useEffect when options arrive
+    }, [filterDraft.classid, assignments]);
 
     // Subject options when section changes
     useEffect(() => {
-        setSelSubject(''); setSelExam(''); setSelSemester('');
-        if (!selSection) { setSubjectOptions([]); setExamOptions([]); setSemesterOptions([]); return; }
-        const filtered = assignments.filter(a => String(a.classid) === selClass && String(a.sectionid) === selSection);
+        const classid  = filterDraft.classid;
+        const sectionid = filterDraft.sectionid;
+        setSubjectOptions([]); setExamOptions([]); setSemesterOptions([]);
+        if (!sectionid || sectionid === 'All') return;
+        const filtered = assignments.filter(a => String(a.classid) === classid && String(a.sectionid) === sectionid);
         const subOpts = [...new Map(filtered.map(a => [a.subjectid, a])).values()];
         setSubjectOptions(subOpts);
-        if (subOpts.length === 1) setSelSubject(String(subOpts[0].subjectid));
-    }, [selSection, selClass, assignments]);
+        // Auto-select is handled by FilterBar's useEffect when options arrive
+    }, [filterDraft.sectionid, filterDraft.classid, assignments]);
 
-    // Exam/Semester options when subject changes
+    // Exam/Semester options when subject changes (DB fetch)
     useEffect(() => {
-        setSelExam(''); setSelSemester('');
-        if (!selSubject) { setExamOptions([]); setSemesterOptions([]); return; }
+        const { classid, sectionid, subjectid } = filterDraft;
+        setExamOptions([]); setSemesterOptions([]);
+        if (!subjectid || subjectid === 'All') return;
         (async () => {
             const [stuExams, qExams] = await Promise.all([
                 rest('students_exams_employees_section_subjects_classes_semisters_cur', {
-                    employeeid: `eq.${user.employeeid}`, classid: `eq.${selClass}`,
-                    sectionid: `eq.${selSection}`, subjectid: `eq.${selSubject}`, select: 'examid,semisterid',
+                    employeeid: `eq.${user.employeeid}`, classid: `eq.${classid}`,
+                    sectionid: `eq.${sectionid}`, subjectid: `eq.${subjectid}`, select: 'examid,semisterid',
                 }),
                 rest('questions_exams_employee_subjects_sections_tbl', {
-                    employeeid: `eq.${user.employeeid}`, classid: `eq.${selClass}`,
-                    sectionid: `eq.${selSection}`, subjectid: `eq.${selSubject}`,
+                    employeeid: `eq.${user.employeeid}`, classid: `eq.${classid}`,
+                    sectionid: `eq.${sectionid}`, subjectid: `eq.${subjectid}`,
                     status: 'in.(new,marked)', select: 'examid',
                 }),
             ]);
@@ -135,7 +136,7 @@ export default function Videos() {
                 name: (() => { const ex = examsData.find(e => e.examid === r.examid); return getField(ex, 'examname', 'examname_en', lang) || `Exam ${r.examid}`; })(),
             }));
             setExamOptions(exOpts);
-            if (exOpts.length === 1) setSelExam(String(exOpts[0].examid));
+            // Auto-select is handled by FilterBar's useEffect when options arrive
             const semIds = [...new Set(unique.map(r => r.semisterid).filter(Boolean))];
             const semOpts = semIds.map(id => ({
                 semisterid: id,
@@ -143,21 +144,21 @@ export default function Videos() {
                 semistername: semestersData.find(s => s.semisterid === id)?.semistername || semestersData.find(s => s.semisterid === id)?.semistername_en || `Semester ${id}`,
             }));
             setSemesterOptions(semOpts);
-            if (semOpts.length === 1) setSelSemester(String(semOpts[0].semisterid));
+            // Auto-select is handled by FilterBar's useEffect when options arrive
         })();
-    }, [selSubject, selSection, selClass, user, examsData, semestersData, lang]);
+    }, [filterDraft.subjectid, filterDraft.sectionid, filterDraft.classid, user, examsData, semestersData, lang]);
 
-    const loadQuestions = useCallback(async () => {
+    // loadQuestions takes explicit filter params
+    const loadQuestions = useCallback(async (params) => {
         setLoading(true);
         try {
-            const params = {
-                employeeid: `eq.${user.employeeid}`, classid: `eq.${selClass}`,
-                sectionid: `eq.${selSection}`, subjectid: `eq.${selSubject}`,
-                examid: `eq.${selExam}`, select: '*',
-                order: 'questionid.asc',
-            };
             const [qs, examTbl, clTbl, secRows, subTbl] = await Promise.all([
-                rest('questions_exams_employee_subjects_sections_tbl', params),
+                rest('questions_exams_employee_subjects_sections_tbl', {
+                    employeeid: `eq.${user.employeeid}`, classid: `eq.${params.classid}`,
+                    sectionid: `eq.${params.sectionid}`, subjectid: `eq.${params.subjectid}`,
+                    examid: `eq.${params.examid}`, select: '*',
+                    order: 'questionid.asc',
+                }),
                 rest('exams_tbl',    { select: 'examid,examname_en,examname' }),
                 rest('classes_tbl',  { select: 'classid,classname_en,classname' }),
                 rest('sections_tbl', { select: 'sectionid,sectionname_en,sectionname' }),
@@ -180,29 +181,32 @@ export default function Videos() {
             }));
         } catch (e) { addToast(e.message, 'error'); }
         finally { setLoading(false); }
-    }, [user, selClass, selSection, selSubject, selExam, answeredKeys, addToast, lang]);
+    }, [user, answeredKeys, addToast, lang]);
 
+    // Reload on language change if already searched
     useEffect(() => {
-        if (!searched || !selClass || !selSection || !selSubject || !selExam) return;
-        loadQuestions();
-    }, [lang, searched, selClass, selSection, selSubject, selExam, loadQuestions]);
+        const handler = () => {
+            if (!searched || !appliedRef.current) return;
+            loadQuestions(appliedRef.current);
+        };
+        window.addEventListener('langChanged', handler);
+        return () => window.removeEventListener('langChanged', handler);
+    }, [searched, loadQuestions]);
 
-    // Change 11: ALL fields required
-    const handleSearch = async () => {
-        const errors = {};
-        if (!selClass)    errors.classid    = true;
-        if (!selSection)  errors.sectionid  = true;
-        if (!selSubject)  errors.subjectid  = true;
-        if (!selExam)     errors.examid     = true;
-        if (!selSemester) errors.semisterid = true;
-        if (Object.keys(errors).length > 0) {
-            setFieldErrors(errors);
-            addToast(t('fillRequired', lang) || 'All filter fields are required on the Videos page.', 'error');
-            return;
-        }
-        setFieldErrors({});
+    const handleFilterChange = (vals) => {
+        setFilterDraft(vals);
+    };
+
+    const handleApply = async (vals) => {
+        appliedRef.current = vals;
         setSearched(true);
-        await loadQuestions();
+        await loadQuestions(vals);
+    };
+
+    const handleReset = () => {
+        appliedRef.current = null;
+        setSearched(false);
+        setQuestions([]);
     };
 
     const handleSaveUrl = async (q) => {
@@ -225,31 +229,65 @@ export default function Videos() {
     const handleUnlock = (qid) => { setUnlockedIds(prev => new Set([...prev, qid])); };
     const handleLock   = (qid) => { setUnlockedIds(prev => { const n = new Set(prev); n.delete(qid); return n; }); if (editingId === qid) setEditingId(null); };
 
-    const errBorder = (key) => fieldErrors[key] ? 'border-red-400 bg-red-50' : 'border-[#e2e8f0] bg-white';
-
-    useEffect(() => {
-        if (!searched || !selClass || !selSection || !selSubject || !selExam || !selSemester) return;
-        loadQuestions();
-    }, [searched, selClass, selSection, selSubject, selExam, selSemester, loadQuestions]);
-
-    useEffect(() => {
-        const handler = () => {
-            if (!searched || !selClass || !selSection || !selSubject || !selExam || !selSemester) return;
-            loadQuestions();
-        };
-        window.addEventListener('langChanged', handler);
-        return () => window.removeEventListener('langChanged', handler);
-    }, [searched, selClass, selSection, selSubject, selExam, selSemester, loadQuestions]);
-
-    // Change 5: dep = disabled flag. false = always enabled; !selX = disabled until parent selected
-    const filterDefs = [
-        { key: 'classid',    label: t('class', lang),  sel: selClass,    set: setSelClass,    opts: classOptions.map(a => ({ value: String(a.classid),   label: getClassName(lookupRef.current.cl.find(c=>String(c.classid)===String(a.classid)), lang) || String(a.classid) })),   dep: false },
-        { key: 'sectionid',  label: t('section', lang),  sel: selSection,  set: setSelSection,  opts: sectionOptions.map(a => ({ value: String(a.sectionid),  label: getSectionName(lookupRef.current.sec.find(s=>String(s.sectionid)===String(a.sectionid)), lang) || String(a.sectionid) })), dep: !selClass },
-        { key: 'subjectid',  label: t('subject', lang),  sel: selSubject,  set: setSelSubject,  opts: subjectOptions.map(a => ({ value: String(a.subjectid),  label: getSubjectName(lookupRef.current.sub.find(s=>String(s.subjectid)===String(a.subjectid)), lang) || String(a.subjectid) })), dep: !selSection },
-        { key: 'examid',     label: t('exam', lang),     sel: selExam,     set: setSelExam,     opts: examOptions.map(e => ({ value: String(e.examid), label: t(e.name, lang) })),              dep: !selSubject },
-        { key: 'semisterid', label: t('semester', lang), sel: selSemester, set: setSelSemester, opts: semesterOptions.map(s => ({ value: String(s.semisterid), label: lang === 'ar' ? (s.semistername || s.semistername_en) : s.semistername_en })), dep: !selSubject },
+    const filterFields = [
+        {
+            key: 'classid',
+            label: t('class', lang),
+            required: true,
+            options: [
+                { value: 'All', label: t('allClasses', lang) || 'All Classes' },
+                ...classOptions.map(a => ({
+                    value: String(a.classid),
+                    label: getClassName(lookupRef.current.cl.find(c => String(c.classid) === String(a.classid)), lang) || String(a.classid)
+                }))
+            ]
+        },
+        {
+            key: 'sectionid',
+            label: t('section', lang),
+            required: true,
+            options: [
+                { value: 'All', label: t('allSections', lang) || 'All Sections' },
+                ...sectionOptions.map(a => ({
+                    value: String(a.sectionid),
+                    label: getSectionName(lookupRef.current.sec.find(s => String(s.sectionid) === String(a.sectionid)), lang) || String(a.sectionid)
+                }))
+            ]
+        },
+        {
+            key: 'subjectid',
+            label: t('subject', lang),
+            required: true,
+            options: [
+                { value: 'All', label: t('allSubjects', lang) || 'All Subjects' },
+                ...subjectOptions.map(a => ({
+                    value: String(a.subjectid),
+                    label: getSubjectName(lookupRef.current.sub.find(s => String(s.subjectid) === String(a.subjectid)), lang) || String(a.subjectid)
+                }))
+            ]
+        },
+        {
+            key: 'examid',
+            label: t('exam', lang),
+            required: true,
+            options: [
+                { value: 'All', label: t('allExams', lang) || 'All Exams' },
+                ...examOptions.map(e => ({ value: String(e.examid), label: e.name }))
+            ]
+        },
+        {
+            key: 'semisterid',
+            label: t('semester', lang),
+            required: true,
+            options: [
+                { value: 'All', label: t('allSemesters', lang) || 'All Semesters' },
+                ...semesterOptions.map(s => ({
+                    value: String(s.semisterid),
+                    label: lang === 'ar' ? (s.semistername || s.semistername_en) : s.semistername_en
+                }))
+            ]
+        },
     ];
-
 
     return (
         <div className="space-y-6 pb-12">
@@ -259,41 +297,12 @@ export default function Videos() {
                 <Breadcrumb />
             </div>
 
-            {/* Change 11: all required; Change 2: correct order */}
-            <div className="bg-white rounded-xl border border-[#e2e8f0] p-4">
-                <div className="flex items-center gap-2 mb-3">
-                    <AlertCircle className="h-3.5 w-3.5 text-red-400" />
-                    <span className="text-xs text-[#94a3b8]">{t('allFieldsRequired', lang) || 'All fields are required'} <span className="text-red-500 font-bold">*</span></span>
-                </div>
-                <div className="flex flex-wrap gap-3 items-end">
-                    {filterDefs.map(fd => (
-                        <div key={fd.key} className="flex flex-col gap-1">
-                            <label className={`text-[10px] font-bold uppercase tracking-wider ${fieldErrors[fd.key] ? 'text-red-500' : 'text-[#64748b]'}`}>
-                                {fd.label} <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                                value={fd.sel} disabled={fd.dep}
-                                onChange={e => { fd.set(e.target.value); setFieldErrors(p => ({...p, [fd.key]: false})); }}
-                                className={`h-9 pl-3 rounded-lg border text-sm font-medium min-w-[140px] disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#1d4ed8]/20 ${errBorder(fd.key)}`}
-                                style={selStyle}>
-                                <option value="">{t('choose', lang) || '-- Choose --'}</option>
-                                {fd.opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </select>
-                            {fieldErrors[fd.key] && (
-                                <span className="text-[10px] text-red-500 font-medium">{t('required', lang)}</span>
-                            )}
-                        </div>
-                    ))}
-                        <button onClick={handleSearch}
-                        className="h-9 px-5 bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-sm font-bold rounded-lg transition-all shadow-sm flex items-center gap-2">
-                        <Search className="h-4 w-4" /> {t('showVideos', lang)}
-                    </button>
-                    <button onClick={() => { setSelClass(''); setSelSection(''); setSelSubject(''); setSelExam(''); setSelSemester(''); setQuestions([]); setSearched(false); setFieldErrors({}); }}
-                        className="h-9 px-5 rounded-lg border border-[#e2e8f0] font-semibold text-[#64748b] bg-white hover:bg-slate-50 flex items-center gap-2 text-sm">
-                        <X className="h-3.5 w-3.5" /> {t('reset', lang)}
-                    </button>
-                </div>
-            </div>
+            <FilterBar
+                filters={filterFields}
+                onChange={handleFilterChange}
+                onApply={handleApply}
+                onReset={handleReset}
+            />
 
             {!searched && !loading && (
                 <div className="text-center py-20 text-[#94a3b8]">

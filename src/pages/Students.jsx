@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
+import FilterBar from '../components/FilterBar';
 import { useSortable } from '../lib/useSortable';
 import { useColumnSearch } from '../lib/useColumnSearch';
 import SortableTh from '../components/SortableTh';
@@ -30,27 +31,11 @@ export default function Students() {
     const [loading, setLoading]   = useState(false);
     const [hasApplied, setHasApplied] = useState(false); // don't show table until Apply pressed
     const [search, setSearch]     = useState('');
-    const [draft, setDraft]       = useState({ ...EMPTY_FILTER });
-    const [fieldErrors, setFieldErrors] = useState({});
+    const [applied, setApplied]   = useState({ ...EMPTY_FILTER });
 
     // All filter keys (excludes examid per previous change)
-    const filterFields = buildFilters(draft, filterData, {}, lang).filter(f => f.key !== 'examid');
-    // All are required — every key must not be 'All'
+    const filterFields = buildFilters(applied, filterData, {}, lang).filter(f => f.key !== 'examid');
     const REQUIRED_KEYS = filterFields.map(f => f.key);
-
-    // Auto-select any dropdown that has exactly one real option
-    useEffect(() => {
-        const updates = {};
-        filterFields.forEach(f => {
-            const realOpts = (f.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
-            if (realOpts.length === 1 && (!draft[f.key] || draft[f.key] === 'All')) {
-                updates[f.key] = String(realOpts[0].value);
-            }
-        });
-        if (Object.keys(updates).length > 0) {
-            setDraft(prev => ({ ...prev, ...updates }));
-        }
-    }, [filterData]);
 
     const fetchData = useCallback(async (filters) => {
         if (!user) return;
@@ -119,57 +104,21 @@ export default function Students() {
         // Only auto-apply if navigated here with filter state from another page
         if (Object.keys(fromUrl).length > 0) {
             const merged = { ...EMPTY_FILTER, ...fromUrl };
-            setDraft(merged);
+            setApplied(merged);
             setHasApplied(true);
             fetchData(merged);
         }
     }, [fetchData, user]);
-
-
-    const handleDraftChange = (key, val) => {
-        setDraft(prev => ({ ...prev, [key]: val }));
-        if (fieldErrors[key]) setFieldErrors(prev => ({ ...prev, [key]: false }));
-    };
-
-    const handleApply = () => {
-        // Validate: all filter fields must be selected (not 'All')
-        const errors = {};
-        REQUIRED_KEYS.forEach(key => {
-            if (!draft[key] || draft[key] === 'All') errors[key] = true;
-        });
-        if (Object.keys(errors).length > 0) {
-            setFieldErrors(errors);
-            return;
-        }
-        setFieldErrors({});
-        setHasApplied(true);
-        fetchData(draft);
-    };
-
-    const handleReset = () => {
-        setDraft({ ...EMPTY_FILTER });
-        setFieldErrors({});
-        setStudents([]);
-        setHasApplied(false);
-        setSearch('');
-    };
 
     const filtered = applyColumnSearch(sortedStudents.filter(s => {
         if (!search) return true;
         return s.fullName?.toLowerCase().includes(search.toLowerCase());
     }));
 
-    const selectStyle = {
-        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
-        backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
-        paddingRight: '2rem', appearance: 'none',
-    };
-
-
     useEffect(() => {
         if (!hasApplied) return;
-        fetchData(draft);
-    }, [lang, hasApplied, draft, fetchData]);
+        fetchData(applied);
+    }, [lang, hasApplied, applied, fetchData]);
 
     return (
         <div className="space-y-6 pb-12">
@@ -179,53 +128,13 @@ export default function Students() {
                 <Breadcrumb />
             </div>
 
-            {/* Filter — all fields required */}
-            <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm">
-                <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-[#f1f5f9]">
-                    <span className="text-sm font-bold text-[#0f172a]">{t('filterStudents', lang) || 'Filter Students'}</span>
-                    <span className="text-xs text-[#94a3b8] ml-1">· {t('allFieldsRequiredDesc', lang) || 'All fields marked * are required'}</span>
-                </div>
-                <div className="flex items-end gap-4 px-4 py-3 overflow-x-auto flex-wrap">
-                    {filterFields.map(f => (
-                        <div key={f.key} className="flex flex-col gap-1 flex-shrink-0">
-                            <label className={`text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${fieldErrors[f.key] ? 'text-red-500' : 'text-[#64748b]'}`}>
-                                {f.label} <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                                value={draft[f.key] ?? 'All'}
-                                onChange={e => handleDraftChange(f.key, e.target.value)}
-                                className={`h-9 pl-3 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 min-w-[130px] transition-colors ${
-                                    fieldErrors[f.key]
-                                        ? 'border-red-400 bg-red-50 focus:ring-red-200'
-                                        : 'border-[#e2e8f0] bg-white focus:ring-[#1d4ed8]/30'
-                                }`}
-                                style={selectStyle}
-                            >
-                                {(f.options || []).map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                            </select>
-                            {fieldErrors[f.key] && (
-                                <span className="text-[10px] text-red-500 font-medium">{t('required', lang)}</span>
-                            )}
-                        </div>
-                    ))}
-                    <div className="flex items-end gap-2 flex-shrink-0 ml-2">
-                        <button
-                            onClick={handleApply}
-                            className="h-9 px-5 bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-sm font-bold rounded-lg transition-all whitespace-nowrap shadow-sm"
-                        >
-                            {t('applyFilter', lang)}
-                        </button>
-                        <button
-                            onClick={handleReset}
-                            className="h-9 px-4 border border-[#e2e8f0] text-[#64748b] text-sm font-bold rounded-lg hover:bg-slate-50 transition-all"
-                        >
-                            {t('reset', lang)}
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <FilterBar
+                filters={filterFields.map(f => ({ ...f, required: true }))}
+                requiredFields={REQUIRED_KEYS}
+                appliedFilters={applied}
+                onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
+                onReset={(vals) => { setApplied(vals); setStudents([]); setHasApplied(false); setSearch(''); }}
+            />
 
             {/* Only show search + table after Apply Filter is pressed */}
             {!hasApplied ? (

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Search, Plus, Edit2, Trash2, Loader2, Upload, Download, X } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import FilterBar from '../../components/FilterBar';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { rest, update, remove, dbQuery, EDGE_FUNCTION_URL } from '../../lib/supabaseClient';
@@ -319,7 +320,7 @@ export default function AdminEmployees() {
         const empname    = getCol(['employeename']);
         const empname_en = getCol(['employeename_en']);
         const empemail   = getCol(['employeeemail', 'email']);
-        const empmobile  = getCol(['employeemobile', 'mobile']);
+        let empmobile  = getCol(['employeemobile', 'mobile']);
         const typeRaw    = getCol(['type']).toLowerCase();
         const divRaw     = getCol(['divisionname', 'division name', 'division']);
         const curRaw     = getCol(['curriculumname', 'curriculum name', 'curriculum']);
@@ -575,39 +576,16 @@ export default function AdminEmployees() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-[#e2e8f0] p-5">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#64748b] mb-2">{t('division', lang)}</label>
-            <select value={draftFilters.divisionid} onChange={(e) => setDraftFilters((p) => ({ ...p, divisionid: e.target.value }))} className="input-field h-11 px-4 w-full">
-              <option value="All">{t('allDivisions', lang)}</option>
-              {Array.from(new Map(divisions.map((division) => [String(division.divisionid), division])).values()).map((division) => <option key={division.divisionid} value={String(division.divisionid)}>{getField(division, 'divisionname', 'divisionname_en', lang) || division.divisionname}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#64748b] mb-2">{t('curriculum', lang)}</label>
-            <select value={draftFilters.curriculumid} onChange={(e) => setDraftFilters((p) => ({ ...p, curriculumid: e.target.value }))} className="input-field h-11 px-4 w-full">
-              <option value="All">{t('allCurriculums', lang)}</option>
-              {Array.from(new Map(curriculums.map((curriculum) => [`${curriculum.divisionid}-${curriculum.curriculumid}`, curriculum])).values()).map((curriculum) => <option key={`${curriculum.divisionid}-${curriculum.curriculumid}`} value={String(curriculum.curriculumid)}>{getField(curriculum, 'curriculumname', 'curriculumname_en', lang) || curriculum.curriculumname}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#64748b] mb-2">{t('type', lang)}</label>
-            <select value={draftFilters.typeid} onChange={(e) => setDraftFilters((p) => ({ ...p, typeid: e.target.value }))} className="input-field h-11 px-4 w-full">
-              <option value="All">{t('allTypes', lang)}</option>
-              {types.map((type) => <option key={type.typeid} value={String(type.typeid)}>{getField(type, 'typename', 'typename_en', lang) || type.typename}</option>)}
-            </select>
-          </div>
-          <div className="flex items-end gap-3">
-            <button onClick={() => setApplied(draftFilters)} className="btn-primary h-11 px-6">{t('applyFilter', lang)}</button>
-            <button onClick={() => {
-              const cleared = { typeid: 'All', divisionid: 'All', curriculumid: 'All' };
-              setDraftFilters(cleared);
-              setApplied(cleared);
-            }} className="h-11 px-6 rounded-xl border border-[#e2e8f0] font-semibold text-[#64748b] bg-white">{t('reset', lang)}</button>
-          </div>
-        </div>
-      </div>
+      <FilterBar
+        filters={[
+          { key: 'divisionid', label: t('division', lang), value: applied.divisionid, options: [{ value: 'All', label: t('allDivisions', lang) }, ...Array.from(new Map(divisions.map(d => [String(d.divisionid), d])).values()).map(d => ({ value: String(d.divisionid), label: getField(d, 'divisionname', 'divisionname_en', lang) || d.divisionname }))] },
+          { key: 'curriculumid', label: t('curriculum', lang), value: applied.curriculumid, options: [{ value: 'All', label: t('allCurriculums', lang) }, ...Array.from(new Map(curriculums.map(c => [`${c.divisionid}-${c.curriculumid}`, c])).values()).map(c => ({ value: String(c.curriculumid), label: getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname }))] },
+          { key: 'typeid', label: t('type', lang), value: applied.typeid, options: [{ value: 'All', label: t('allTypes', lang) }, ...types.map(tp => ({ value: String(tp.typeid), label: getField(tp, 'typename', 'typename_en', lang) || tp.typename }))] },
+        ]}
+        appliedFilters={applied}
+        onApply={(vals) => setApplied(vals)}
+        onReset={(vals) => setApplied(vals)}
+      />
 
 
       <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 flex items-center gap-3">

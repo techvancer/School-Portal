@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Mail, Shield, Edit2, Trash2, X, Loader2, Download, Upload, Plus, Hash } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import FilterBar from '../../components/FilterBar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -283,20 +284,14 @@ export default function AdminSupervisors() {
                 </div>
             </div>
 
-            {/* Stage filter only */}
-            <div className="bg-white rounded-xl border border-[#e2e8f0] p-4">
-                <div className="flex items-end gap-4">
-                    <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-[#64748b] mb-2">{t('stage', lang)}</label>
-                        <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className="input-field h-11 px-4 w-48">
-                            <option value="All">{t('allStages', lang)}</option>
-                            {stages.map(s => <option key={s.stageid} value={String(s.stageid)}>{getField(s, 'stagename', 'stagename_en', lang) || s.stagename}</option>)}
-                        </select>
-                    </div>
-                    <button onClick={() => { setHasApplied(true); fetchData(); }} className="btn-primary h-11 px-6">{t('applyFilter', lang)}</button>
-                    <button onClick={() => { setStageFilter('All'); setHasApplied(false); }} className="h-11 px-6 rounded-xl border border-[#e2e8f0] font-semibold text-[#64748b] bg-white">{t('reset', lang)}</button>
-                </div>
-            </div>
+            <FilterBar
+                filters={[
+                    { key: 'stageid', label: t('stage', lang), value: stageFilter, options: [{ value: 'All', label: t('allStages', lang) }, ...stages.map(s => ({ value: String(s.stageid), label: getField(s, 'stagename', 'stagename_en', lang) || s.stagename }))] },
+                ]}
+                appliedFilters={{ stageid: stageFilter }}
+                onApply={(vals) => { setStageFilter(vals.stageid); setHasApplied(true); fetchData(); }}
+                onReset={() => { setStageFilter('All'); setHasApplied(false); }}
+            />
 
             {csvErrors.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">

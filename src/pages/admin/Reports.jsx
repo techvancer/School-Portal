@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { FileText, Download, BarChart2, TrendingUp } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import FilterBar from '../../components/FilterBar';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { rest } from '../../lib/supabaseClient';
@@ -160,15 +161,15 @@ export default function AdminReports() {
                         <p className="text-xs text-[#94a3b8] mt-1">{t('compareStudentsSubjects', lang)}</p>
                     </div>
                     {sectionOptions.length >= 2 && (
-                        <div className="flex flex-wrap gap-3 items-center">
-                            <select className="input-field h-10 px-3 min-w-[140px]" value={classA} onChange={e => setClassA(e.target.value)}>
-                                {sectionOptions.map(o => <option key={o}>{o}</option>)}
-                            </select>
-                            <span className="text-sm font-bold text-slate-400">{t('vs', lang)}</span>
-                            <select className="input-field h-10 px-3 min-w-[140px]" value={classB} onChange={e => setClassB(e.target.value)}>
-                                {sectionOptions.map(o => <option key={o}>{o}</option>)}
-                            </select>
-                        </div>
+                        <FilterBar
+                            filters={[
+                                { key: 'classA', label: t('classA', lang) || 'Class A', value: classA, options: sectionOptions.map(o => ({ value: o, label: o })) },
+                                { key: 'classB', label: t('classB', lang) || 'Class B', value: classB, options: sectionOptions.map(o => ({ value: o, label: o })) },
+                            ]}
+                            appliedFilters={{ classA, classB }}
+                            onApply={(vals) => { setClassA(vals.classA); setClassB(vals.classB); }}
+                            onReset={() => { if (sectionOptions.length >= 2) { setClassA(sectionOptions[0]); setClassB(sectionOptions[1]); } }}
+                        />
                     )}
                 </div>
                 {loading ? <EmptyChart message={`${t('loading', lang)}...`} /> : sectionOptions.length < 2 ? (

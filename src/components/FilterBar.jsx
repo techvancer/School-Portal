@@ -38,6 +38,7 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
     const isDraftDisabled = isLocked;
 
     useEffect(() => {
+        let autoNext = null;
         setDraft(prev => {
             const next = { ...prev };
             filters.forEach(f => {
@@ -47,28 +48,58 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                     // Key doesn't exist yet — initialise it
                     next[f.key] = parentVal;
                 }
-                // Auto-select if exactly 1 real option and draft is still 'All'
+                // Auto-select if exactly 1 real option, draft is still 'All', and filter is not locked.
+                // Compute locked state from 'next' (not stale 'draft') so newly-selected upstream
+                // filters are reflected immediately.
                 const realOpts = (f.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
-                if (realOpts.length === 1 && (!next[f.key] || next[f.key] === 'All')) {
+                const idx = filters.findIndex(ff => ff.key === f.key);
+                const lockedInNext = idx > 0 && filters.slice(0, idx).some(prev => {
+                    const prevReal = (prev.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
+                    return prevReal.length > 1 && (!next[prev.key] || next[prev.key] === 'All');
+                });
+                if (realOpts.length === 1 && (!next[f.key] || next[f.key] === 'All') && !lockedInNext) {
                     next[f.key] = String(realOpts[0].value);
                 }
                 // NOTE: intentionally NOT syncing parent 'All' back into draft on options change —
                 // that was causing language-change to reset user selections.
                 // The Reset button calls handleReset() which sets the draft directly.
             });
+            // Capture if anything changed so we can notify parent via onChange
+            const anyChanged = Object.keys(next).some(k => next[k] !== (prev[k] ?? 'All'));
+            if (anyChanged) autoNext = next;
             return next;
         });
+        // Notify parent of auto-selected values so cascade logic in parent can react
+        if (autoNext && onChange) onChange(autoNext);
     }, [filters.map(f => (f.options||[]).length).join(',')]); // eslint-disable-line
+
+    // After any selection, cascade auto-select for downstream filters that have exactly one option and are now unlocked
+    const cascadeAutoSelect = (d) => {
+        const result = { ...d };
+        filters.forEach(f => {
+            const realOpts = (f.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
+            const fidx = filters.findIndex(ff => ff.key === f.key);
+            const locked = fidx > 0 && filters.slice(0, fidx).some(prev => {
+                const prevReal = (prev.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
+                return prevReal.length > 1 && (!result[prev.key] || result[prev.key] === 'All');
+            });
+            if (realOpts.length === 1 && (!result[f.key] || result[f.key] === 'All') && !locked) {
+                result[f.key] = String(realOpts[0].value);
+            }
+        });
+        return result;
+    };
 
     const handleChange = (key, val) => {
         // When a filter changes, reset all downstream filters to 'All'
         // Hierarchy order: curriculumid → divisionid → stageid → classid → sectionid → subjectid → examid/semisterid
         const order = ['curriculumid', 'divisionid', 'stageid', 'classid', 'sectionid', 'subjectid', 'examid', 'semisterid'];
         const idx = order.indexOf(key);
-        const newDraft = { ...draft, [key]: val };
+        let newDraft = { ...draft, [key]: val };
         if (idx >= 0) {
             order.slice(idx + 1).forEach(k => { newDraft[k] = 'All'; });
         }
+        newDraft = cascadeAutoSelect(newDraft);
         setDraft(newDraft);
         if (onChange) onChange(newDraft);
         if (fieldErrors[key]) setFieldErrors(prev => ({ ...prev, [key]: false }));

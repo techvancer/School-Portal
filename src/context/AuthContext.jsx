@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase, rest, dbQuery } from '../lib/supabaseClient';
 
 const AuthContext = createContext(null);
@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [firstLogin, setFirstLogin] = useState(false);
+    const loadedAuthId = useRef(null); // tracks which auth user is already loaded
 
     useEffect(() => {
         supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -15,8 +16,13 @@ export function AuthProvider({ children }) {
         });
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            if (session) await loadEmployee(session.user, session.access_token);
-            else { setUser(null); setFirstLogin(false); }
+            // TOKEN_REFRESHED: JWT rotated silently, user data unchanged
+            // SIGNED_IN with same user: Supabase restores session on tab focus / minimize-restore
+            // Both cases: skip re-fetching employee data to prevent full page reload
+            if (event === 'TOKEN_REFRESHED') return;
+            if (!session) { setUser(null); setFirstLogin(false); loadedAuthId.current = null; return; }
+            if (loadedAuthId.current === session.user.id) return; // same user already loaded
+            await loadEmployee(session.user, session.access_token);
         });
 
         return () => subscription.unsubscribe();
@@ -46,6 +52,7 @@ export function AuthProvider({ children }) {
                 branchName   = branches[0]?.branchname_en || branches[0]?.branchname || '';
                 branchNameAr = branches[0]?.branchname    || branches[0]?.branchname_en || '';
             } catch {}
+            loadedAuthId.current = authUser.id;
             setFirstLogin(emp.first_login === true);
             const displayNameEn = emp.employeename_en || emp.employeename || '';
             const displayNameAr = emp.employeename || emp.employeename_en || '';
@@ -87,6 +94,7 @@ export function AuthProvider({ children }) {
         await supabase.auth.signOut();
         setUser(null);
         setFirstLogin(false);
+        loadedAuthId.current = null;
     };
 
     const changePassword = async (newPassword) => {
