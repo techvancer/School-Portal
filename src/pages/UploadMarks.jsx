@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Loader2, Save, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
@@ -58,6 +59,7 @@ export default function UploadMarks() {
     });
     const [csvErrors, setCsvErrors] = useState([]);
     const [preview, setPreview] = useState(null);
+    const [confirm, setConfirm] = useState({ open: false });
 
     const activeTab = 'upload';
 
@@ -515,7 +517,7 @@ export default function UploadMarks() {
                                 <h2 className="text-base font-bold text-[#0f172a]">Preview</h2>
                                 <button
                                     type="button"
-                                    onClick={handleUpload}
+                                    onClick={() => setConfirm({ open: true, action: 'upload' })}
                                     disabled={uploading}
                                     className="px-5 py-2 bg-[#1d4ed8] hover:bg-[#1e40af] text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-60"
                                 >
@@ -616,7 +618,7 @@ export default function UploadMarks() {
                                     <div className="flex justify-end">
                                         <button
                                             type="button"
-                                            onClick={handleSaveManual}
+                                            onClick={() => setConfirm({ open: true, action: 'save' })}
                                             disabled={saving}
                                             className="px-6 py-2.5 bg-[#1d4ed8] hover:bg-[#1e40af] text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-60"
                                         >
@@ -629,6 +631,19 @@ export default function UploadMarks() {
                     </div>
                 </div>
             </div>
+        <ConfirmDialog
+            open={confirm.open}
+            title={confirm.action === 'upload' ? 'Upload Grades?' : 'Save Marks?'}
+            message={confirm.action === 'upload'
+                ? 'The uploaded file will be processed and all marks saved to the database.'
+                : 'All entered marks will be saved to the database.'}
+            confirmLabel={confirm.action === 'upload' ? 'Upload' : 'Save'}
+            cancelLabel="Cancel"
+            variant="primary"
+            loading={confirm.action === 'upload' ? uploading : saving}
+            onConfirm={() => { setConfirm({ open: false }); confirm.action === 'upload' ? handleUpload() : handleSaveManual(); }}
+            onCancel={() => setConfirm({ open: false })}
+        />
         </div>
     );
 }

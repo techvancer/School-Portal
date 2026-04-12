@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft, UserPlus } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { rest, insert, nextId } from '../../lib/supabaseClient';
@@ -35,6 +36,7 @@ export default function AdminEnrollStudent() {
 
   const [form, setForm] = useState(EMPTY);
   const [isLoading, setIsLoading] = useState(false);
+  const [confirm, setConfirm] = useState({ open: false });
   const [loadingDropdowns, setLoadingDropdowns] = useState(true);
 
   const [classes, setClasses]           = useState([]);
@@ -269,12 +271,23 @@ export default function AdminEnrollStudent() {
           className="px-6 py-2.5 font-bold text-[#64748b] border border-[#e2e8f0] rounded-xl hover:bg-slate-50 transition-colors">
           {t('cancel', lang)}
         </button>
-        <button onClick={handleSave} disabled={isLoading}
+        <button onClick={() => setConfirm({ open: true })} disabled={isLoading}
           className="btn-primary h-11 px-8 flex items-center gap-2 disabled:opacity-60">
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
           {t('enrollStudent', lang)}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={lang === 'ar' ? 'تأكيد التسجيل' : 'Confirm Enrollment'}
+        message={lang === 'ar' ? 'هل تريد تسجيل هذا الطالب في النظام؟' : 'Enroll this student in the system?'}
+        confirmLabel={lang === 'ar' ? 'تسجيل' : 'Enroll'}
+        variant="primary"
+        loading={isLoading}
+        onCancel={() => setConfirm({ open: false })}
+        onConfirm={() => { setConfirm({ open: false }); handleSave(); }}
+      />
     </div>
   );
 }

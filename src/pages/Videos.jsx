@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Video, Loader2, ExternalLink, Plus, Save, X, Lock, Unlock } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
 import FilterBar from '../components/FilterBar';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { insert, rest, dbQuery } from '../lib/supabaseClient';
@@ -46,6 +47,7 @@ export default function Videos() {
     const [editUrl,     setEditUrl]     = useState('');
     const [saving,      setSaving]      = useState(false);
     const [unlockedIds, setUnlockedIds] = useState(new Set());
+    const [confirm, setConfirm] = useState({ open: false, question: null });
 
     // Initial data load: assignments + lookup tables
     useEffect(() => {
@@ -341,7 +343,7 @@ export default function Videos() {
                                     const canEdit    = !q.examCompleted || isUnlocked;
                                     const isEditing  = editingId === q.questionid;
                                     return (
-                                        <motion.tr key={q.questionid} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
+                                        <motion.tr key={`${q.questionid}-${q.examid}-${q.classid}-${q.sectionid}-${q.subjectid}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
                                             className="hover:bg-slate-50 transition-colors">
                                             <td className="py-3 px-4 text-sm text-[#94a3b8] font-mono">#{q.questionid}</td>
                                             <td className="py-3 px-4 text-sm font-bold text-[#0f172a]">{q.classname}</td>
@@ -373,7 +375,7 @@ export default function Videos() {
                                                 {canEdit ? (
                                                     isEditing ? (
                                                         <div className="flex items-center gap-1.5">
-                                                            <button onClick={() => handleSaveUrl(q)} disabled={saving}
+                                                            <button onClick={() => setConfirm({ open: true, question: q })} disabled={saving}
                                                                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-[#1d4ed8] rounded-lg hover:bg-[#1e40af] disabled:opacity-60">
                                                                 {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} {t('save', lang)}
                                                             </button>
@@ -414,6 +416,18 @@ export default function Videos() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                open={confirm.open}
+                title={isAr ? 'حفظ رابط الفيديو؟' : 'Save Video URL?'}
+                message={isAr ? 'سيتم ربط رابط الفيديو بهذا السؤال.' : 'The video URL will be attached to this question.'}
+                confirmLabel={isAr ? 'حفظ' : 'Save'}
+                cancelLabel={isAr ? 'إلغاء' : 'Cancel'}
+                variant="primary"
+                loading={saving}
+                onConfirm={() => { const q = confirm.question; setConfirm({ open: false, question: null }); handleSaveUrl(q); }}
+                onCancel={() => setConfirm({ open: false, question: null })}
+            />
         </div>
     );
 }

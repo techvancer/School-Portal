@@ -114,8 +114,8 @@ export default function AdminReports() {
                 {loading ? <EmptyChart message={`${t('loading', lang)}...`} /> : enrollmentData.length === 0 ? (
                     <EmptyChart message={t('noEnrollmentData', lang)} />
                 ) : (
-                    <div style={{height:"300px",width:"100%"}}>
-                        <ResponsiveContainer width="100%" height="100%">
+                    <div style={{height: 300, width: "100%"}}>
+                        <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={enrollmentData}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
@@ -137,8 +137,8 @@ export default function AdminReports() {
                 {loading ? <EmptyChart message={`${t('loading', lang)}...`} /> : subjectData.length === 0 ? (
                     <EmptyChart message={t('noSubjectData', lang)} />
                 ) : (
-                    <div style={{height:"300px",width:"100%"}}>
-                        <ResponsiveContainer width="100%" height="100%">
+                    <div style={{height: 300, width: "100%"}}>
+                        <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={subjectData}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
@@ -153,7 +153,7 @@ export default function AdminReports() {
 
             {/* Section Comparison */}
             <div className="card p-6 bg-white rounded-xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div className="mb-6 space-y-4">
                     <div>
                         <h3 className="font-bold text-[#0f172a] flex items-center gap-2">
                             <TrendingUp className="h-5 w-5 text-blue-600" /> {t('sectionComparison', lang)}
@@ -175,8 +175,8 @@ export default function AdminReports() {
                 {loading ? <EmptyChart message={`${t('loading', lang)}...`} /> : sectionOptions.length < 2 ? (
                     <EmptyChart message={t('needAtLeastTwo', lang)} />
                 ) : (
-                    <div className="h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                    <div style={{ height: 280, width: '100%' }}>
+                        <ResponsiveContainer width="100%" height={280}>
                             <BarChart data={compareData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />

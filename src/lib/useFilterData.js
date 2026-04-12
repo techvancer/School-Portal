@@ -6,6 +6,14 @@ import { useState, useEffect, useRef } from 'react';
 import { rest } from './supabaseClient';
 import { t, getField } from './langHelper';
 
+// Module-level caches to deduplicate simultaneous or subsequent hook setups
+const filterCacheMap = new Map();
+const filterPromiseMap = new Map();
+export function invalidateFilterCache() {
+    filterCacheMap.clear();
+    filterPromiseMap.clear();
+}
+
 export function useFilterData(user, lang) {
     const [data, setData] = useState({
         curriculums: [], divisions: [],
@@ -18,14 +26,29 @@ export function useFilterData(user, lang) {
     // Effect 1: Fetch raw data from DB (depends only on user identity)
     useEffect(() => {
         if (!user) return;
-        (async () => {
-            try {
-                const role = user.role;
-                const eid  = user.employeeid;
-                const sid  = user.schoolid;
-                const bid  = user.branchid;
+        const cacheKey = `${user.role}_${user.employeeid}_${user.schoolid}_${user.branchid}`;
 
-                const uniq = (arr, key) => [...new Map(arr.map(r => [r[key], r])).values()];
+        if (filterCacheMap.has(cacheKey)) {
+            rawDataRef.current = filterCacheMap.get(cacheKey);
+            window.dispatchEvent(new Event('filterDataReady'));
+            return;
+        }
+
+        if (filterPromiseMap.has(cacheKey)) {
+            filterPromiseMap.get(cacheKey).then(raw => {
+                rawDataRef.current = raw;
+                window.dispatchEvent(new Event('filterDataReady'));
+            }).catch(e => console.error('useFilterData parallel fetch error:', e));
+            return;
+        }
+
+        const fetchLogic = async () => {
+            const role = user.role;
+            const eid  = user.employeeid;
+            const sid  = user.schoolid;
+            const bid  = user.branchid;
+
+            const uniq = (arr, key) => [...new Map((arr||[]).map(r => [r[key], r])).values()];
 
                 // Always fetch shared lookup tables
                 const [examTbl, semTbl, typesTbl, divTbl, curTbl] = await Promise.all([
@@ -116,10 +139,23 @@ export function useFilterData(user, lang) {
                     raw.clRows = clRows; raw.secRows = secRows; raw.subTbl = subTbl; raw.empTbl = empTbl; raw.teacherTypes = teacherTypes;
                 }
                 
+                return raw;
+        };
+
+        (async () => {
+            try {
+                const promise = fetchLogic();
+                filterPromiseMap.set(cacheKey, promise);
+
+                const raw = await promise;
+                filterCacheMap.set(cacheKey, raw);
+                filterPromiseMap.delete(cacheKey);
+
                 rawDataRef.current = raw;
                 window.dispatchEvent(new Event('filterDataReady'));
             } catch (e) {
                 console.error('useFilterData error:', e);
+                filterPromiseMap.delete(cacheKey);
             }
         })();
     }, [user?.employeeid, user?.role, user?.schoolid, user?.branchid]);

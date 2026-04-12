@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Trash2, Video, Save } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { classesData, examsData } from '../data/mockData';
@@ -21,6 +22,7 @@ export default function EditExam() {
     const [shake, setShake] = useState(false);
     const [formData, setFormData] = useState(null);
     const [errors, setErrors] = useState({});
+    const [confirm, setConfirm] = useState({ open: false });
 
     useEffect(() => {
         const savedExams = JSON.parse(localStorage.getItem('exams')) || examsData;
@@ -293,13 +295,24 @@ export default function EditExam() {
                     Cancel
                 </button>
                 <button
-                    onClick={handleSubmit}
+                    onClick={() => setConfirm({ open: true })}
                     className="flex items-center gap-2 bg-[#1d4ed8] hover:bg-[#1e40af] text-white px-8 py-2.5 rounded-lg font-bold transition-all shadow-md hover:shadow-xl hover:-translate-y-0.5 cursor-pointer"
                 >
                     <Save className="h-5 w-5" />
                     Save Changes
                 </button>
             </div>
+
+            <ConfirmDialog
+                open={confirm.open}
+                title="Save Changes?"
+                message="Your edits to this exam will be saved."
+                confirmLabel="Save"
+                cancelLabel="Cancel"
+                variant="primary"
+                onConfirm={() => { setConfirm({ open: false }); handleSubmit(); }}
+                onCancel={() => setConfirm({ open: false })}
+            />
         </div>
     );
 }

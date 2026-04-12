@@ -325,8 +325,8 @@ export default function Dashboard() {
                                     <p className="text-sm font-medium">{t('No marks recorded yet', lang)}</p>
                                 </div>
                             ) : (
-                                <div style={{ height: '280px', minWidth: 0 }}>
-                                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                <div style={{ height: 280, minWidth: 0, width: '100%' }}>
+                                    <ResponsiveContainer width="100%" height={280}>
                                         <BarChart data={avgScoreByClass} margin={{ top: 20, right: 10, left: 10, bottom: 30 }} barCategoryGap="5%" barGap={2}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                                             <XAxis
@@ -384,8 +384,8 @@ export default function Dashboard() {
                             ) : (
                                 <div>
                                     {/* Pie chart */}
-                                    <div style={{ height: '220px', minWidth: 0 }}>
-                                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                    <div style={{ height: 220, minWidth: 0, width: '100%' }}>
+                                        <ResponsiveContainer width="100%" height={220}>
                                             <PieChart>
                                                 <Pie
                                                     data={gradeDistribution}

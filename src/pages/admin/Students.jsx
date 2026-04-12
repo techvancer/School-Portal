@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, Edit2, Trash2, Loader2, Upload, Download, X } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
 import FilterBar from '../../components/FilterBar';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useFilterData } from '../../lib/useFilterData';
 import { buildFilters, EMPTY_FILTER } from '../../lib/helpers';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -55,6 +56,8 @@ export default function AdminStudents() {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [isLoading, setIsLoading] = useState(false);
   const [csvErrorModal, setCsvErrorModal] = useState({ show: false, errors: [] });
+  const [csvConfirmModal, setCsvConfirmModal] = useState({ show: false, rows: [], fileName: '' });
+  const [deleteModal, setDeleteModal] = useState({ open: false, student: null });
   const { sorted: sortedStudents, sortCol, sortDir, handleSort } = useSortable(students, 'studentid');
   const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch();
 
@@ -348,7 +351,21 @@ export default function AdminStudents() {
         return;
       }
 
-      // ── PHASE 3: all valid — upload ────────────────────────────────────────
+      // ── PHASE 3: all valid — show confirm before uploading ───────────────
+      setCsvConfirmModal({ show: true, rows: validRows, fileName: file.name });
+    } catch (err) {
+      addToast(err.message || getErrorMessage(err, 'general'), 'error');
+    } finally {
+      setIsLoading(false);
+      event.target.value = '';
+    }
+  };
+
+  const confirmCsvUpload = async () => {
+    const { rows: validRows } = csvConfirmModal;
+    setCsvConfirmModal({ show: false, rows: [], fileName: '' });
+    setIsLoading(true);
+    try {
       for (const payload of validRows) {
         await createStudent(payload);
       }
@@ -359,13 +376,11 @@ export default function AdminStudents() {
       addToast(err.message || getErrorMessage(err, 'general'), 'error');
     } finally {
       setIsLoading(false);
-      event.target.value = '';
     }
   };
-;
-;
 
   const handleDelete = async (student) => {
+    setDeleteModal({ open: false, student: null });
     try {
       await dbQuery(`students_sections_classes_tbl?studentid=eq.${student.studentid}`, 'DELETE');
       await remove('students_tbl', student.studentid, 'studentid');
@@ -464,7 +479,7 @@ export default function AdminStudents() {
                     <td className="px-4 py-3 text-center text-xs text-[#475569]">{s.curriculumname}</td>
                     <td className="px-4 py-3 text-center text-sm text-[#475569]">{s.studentemail || '—'}</td>
                     <td className="px-4 py-3 text-center text-sm text-[#475569]">{s.studentmobile || '—'}</td>
-                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button onClick={() => navigate(`/admin/students/edit/${s.studentid}`, { state: { student: s } })} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(s)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button onClick={() => navigate(`/admin/students/edit/${s.studentid}`, { state: { student: s } })} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button onClick={() => setDeleteModal({ open: true, student: s })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 )
               ))}
@@ -478,6 +493,37 @@ export default function AdminStudents() {
       </div>
 
       {isLoading && <div className="text-sm text-[#64748b]">{t('savingChanges', lang)}...</div>}
+
+      <ConfirmDialog
+        open={deleteModal.open}
+        title={isAr ? 'تأكيد الحذف' : 'Delete Student'}
+        message={isAr
+          ? `هل أنت متأكد من حذف الطالب "${_getStudentName(deleteModal.student, lang)}"؟ لا يمكن التراجع عن هذا الإجراء.`
+          : `Are you sure you want to delete "${_getStudentName(deleteModal.student, lang)}"? This action cannot be undone.`}
+        confirmLabel={isAr ? 'حذف' : 'Delete'}
+        variant="danger"
+        loading={isLoading}
+        onCancel={() => setDeleteModal({ open: false, student: null })}
+        onConfirm={() => { const s = deleteModal.student; setDeleteModal({ open: false, student: null }); handleDelete(s); }}
+      />
+
+      {csvConfirmModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setCsvConfirmModal({ show: false, rows: [], fileName: '' })} />
+          <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-base font-bold text-[#0f172a] mb-2">{isAr ? 'تأكيد الرفع' : 'Confirm Upload'}</h3>
+            <p className="text-sm text-[#64748b] mb-6">
+              {isAr
+                ? `هل تريد رفع ${csvConfirmModal.rows.length} طالب من "${csvConfirmModal.fileName}"؟`
+                : `Upload ${csvConfirmModal.rows.length} student(s) from "${csvConfirmModal.fileName}"?`}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setCsvConfirmModal({ show: false, rows: [], fileName: '' })} className="px-4 py-2 rounded-lg border border-[#e2e8f0] text-sm font-semibold text-[#64748b] hover:bg-slate-50">{t('cancel', lang)}</button>
+              <button onClick={confirmCsvUpload} disabled={isLoading} className="px-4 py-2 rounded-lg bg-[#1d4ed8] text-white text-sm font-bold hover:bg-[#1e40af] disabled:opacity-60">{isAr ? 'تأكيد الرفع' : 'Confirm Upload'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {csvErrorModal.show && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">

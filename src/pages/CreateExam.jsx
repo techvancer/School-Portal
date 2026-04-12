@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Save, Loader2 } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { rest, insert, dbQuery } from '../lib/supabaseClient';
@@ -26,6 +27,7 @@ export default function CreateExam() {
   const [examTypes, setExamTypes] = useState([]);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [confirm, setConfirm] = useState({ open: false });
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [examMode, setExamMode] = useState('normal'); // 'normal' | 'auto_graded'
 
@@ -706,13 +708,25 @@ export default function CreateExam() {
           {isAr ? 'إلغاء' : 'Cancel'}
         </button>
         <button
-          onClick={handleSubmit}
+          onClick={() => setConfirm({ open: true })}
           disabled={saving}
           className="btn-primary px-8 py-2.5 flex items-center gap-2 shadow-md disabled:opacity-60"
         >
           {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> {isAr ? 'جاري الحفظ...' : 'Saving...'}</> : <><Save className="h-4 w-4" /> {isAr ? 'حفظ الامتحان' : 'Save Exam'}</>}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={isAr ? 'حفظ الامتحان' : 'Save Exam?'}
+        message={isAr ? 'سيتم حفظ الامتحان وجميع الأسئلة في قاعدة البيانات.' : 'This will save the exam and all questions to the database.'}
+        confirmLabel={isAr ? 'حفظ' : 'Save Exam'}
+        cancelLabel={isAr ? 'إلغاء' : 'Cancel'}
+        variant="primary"
+        loading={saving}
+        onConfirm={() => { setConfirm({ open: false }); handleSubmit(); }}
+        onCancel={() => setConfirm({ open: false })}
+      />
     </div>
   );
 }

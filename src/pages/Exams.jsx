@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClipboardList, Plus, Trash2, AlertTriangle, Loader2, Search, Upload, PlayCircle, Pencil, Ban, Play } from 'lucide-react';
 import FilterBar from '../components/FilterBar';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Breadcrumb from '../components/Breadcrumb';
 import { useToast } from '../context/ToastContext';
@@ -49,6 +50,8 @@ export default function Exams() {
     const [loading, setLoading] = useState(true);
     const [deleteModal, setDeleteModal] = useState({ show: false, exam: null });
     const [cancelModal, setCancelModal] = useState({ show: false, exam: null });
+    const [processModal, setProcessModal] = useState({ open: false, exam: null });
+    const [processing, setProcessing] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [search, setSearch] = useState('');
     const [applied, setApplied] = useState({ ...EMPTY_FILTER });
@@ -97,6 +100,23 @@ export default function Exams() {
                 neededSectionIds.length ? rest('sections_tbl', { sectionid: `in.(${neededSectionIds})`, select: 'sectionid,sectionname,sectionname_en' }) : [],
                 neededSubjectIds.length ? rest('subjects_tbl', { subjectid: `in.(${neededSubjectIds})`, select: 'subjectid,subjectname,Subjectname_en' }) : [],
             ]);
+
+            // Fetch actual class-section enrollment counts for the "/ N students" denominator
+            const allClassSectionPairs = [...new Set(
+                (questionRows || []).map(q => `${q.classid}-${q.sectionid}`)
+            )];
+            const classSectionStudentCounts = {};
+            await Promise.all(allClassSectionPairs.map(async pair => {
+                const [cid, sid] = pair.split('-');
+                const rows = await rest('students_sections_classes_tbl', {
+                    schoolid: `eq.${user.schoolid}`,
+                    branchid: `eq.${user.branchid}`,
+                    classid: `eq.${cid}`,
+                    sectionid: `eq.${sid}`,
+                    select: 'studentid',
+                }).catch(() => []);
+                classSectionStudentCounts[pair] = new Set((rows || []).map(r => r.studentid)).size;
+            }));
             examTblRef.current = examTbl; // cache for language relabeling
 
             // Keep latest-attempt tracking for chart/answeredKeys only
@@ -148,12 +168,7 @@ export default function Exams() {
                 );
                 const marksEntered = new Set(attemptAnswers.map(a => a.studentid)).size;
 
-                const totalStudents = new Set(stuExams.filter(x =>
-                    String(x.examid)    === String(q0.examid) &&
-                    String(x.classid)   === String(q0.classid) &&
-                    String(x.sectionid) === String(q0.sectionid) &&
-                    String(x.subjectid) === String(q0.subjectid)
-                ).map(x => x.studentid)).size;
+                const totalStudents = classSectionStudentCounts[`${q0.classid}-${q0.sectionid}`] ?? 0;
 
                 const stuRow = stuExams.find(x =>
                     String(x.examid)    === String(q0.examid) &&
@@ -284,6 +299,33 @@ export default function Exams() {
         finally { setCancelling(false); }
     };
 
+    const handleProcessMarks = async () => {
+        const e = processModal.exam;
+        if (!e) return;
+        setProcessing(true);
+        try {
+            const response = await fetch('https://n8n.srv1133195.hstgr.cloud/webhook-test/strat_grading', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    eventType: 'start-grading-workflow',
+                    examid: e.examid, classid: e.classid, sectionid: e.sectionid,
+                    subjectid: e.subjectid, employeeid: user.employeeid,
+                    timestamp: new Date().toISOString(),
+                }),
+            });
+            await dbQuery(
+                `questions_exams_employee_subjects_sections_tbl?examid=eq.${e.examid}&employeeid=eq.${user.employeeid}&classid=eq.${e.classid}&sectionid=eq.${e.sectionid}&subjectid=eq.${e.subjectid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`,
+                'PATCH', { status: 'submitted' }, 'return=minimal'
+            );
+            if (response.ok) { addToast('Marks processing started!', 'success'); }
+            else { addToast('Status updated. Workflow trigger failed — check n8n.', 'warning'); }
+            setProcessModal({ open: false, exam: null });
+            fetchExams();
+        } catch (err) { addToast(`Error: ${err.message}`, 'error'); }
+        finally { setProcessing(false); }
+    };
+
 
 
 
@@ -294,7 +336,21 @@ export default function Exams() {
             setExamVisual({ data: [], loading: false, examid: null });
             return;
         }
-        const examRows = exams.filter(e => String(e.examid) === String(examId));
+        // First, grab only non-cancelled rows for this exam
+        const activeExamRows = exams.filter(e => String(e.examid) === String(examId) && e.status !== 'cancelled');
+        
+        // Deduplicate by class-section-subject so we don't fetch/sum the same combo multiple times
+        // if there happened to be multiple active attempts.
+        const uniqueKeys = new Set();
+        const examRows = [];
+        activeExamRows.forEach(r => {
+            const k = `${r.classid}-${r.sectionid}-${r.subjectid}`;
+            if (!uniqueKeys.has(k)) {
+                uniqueKeys.add(k);
+                examRows.push(r);
+            }
+        });
+
         if (examRows.length === 0) {
             setExamVisual({ data: [], loading: false, examid: null });
             return;
@@ -325,13 +381,18 @@ export default function Exams() {
                         }),
                     ]);
 
-                    // Find latest attempt number for this combo
-                    const latestAttempt = (allQuestionRows || []).reduce((max, q) =>
+                    // Find latest NON-CANCELLED attempt number for this combo
+                    const activeQuestionRows = (allQuestionRows || []).filter(q =>
+                        String(q.status || '').toLowerCase() !== 'cancelled'
+                    );
+                    const latestAttempt = (activeQuestionRows.length > 0 ? activeQuestionRows : (allQuestionRows || [])).reduce((max, q) =>
                         Math.max(max, parseInt(q.attempt_number, 10) || 1), 1);
 
-                    // Filter to latest attempt only (ignore superseded attempts)
+                    // Filter to latest non-cancelled attempt only
                     const questionRows = (allQuestionRows || []).filter(q =>
-                        (parseInt(q.attempt_number, 10) || 1) === latestAttempt);
+                        (parseInt(q.attempt_number, 10) || 1) === latestAttempt &&
+                        String(q.status || '').toLowerCase() !== 'cancelled'
+                    );
                     const answerRows = (allAnswerRows || []).filter(a =>
                         (parseInt(a.attempt_number, 10) || 1) === latestAttempt);
 
@@ -516,8 +577,8 @@ export default function Exams() {
                             </span>
                         </div>
                         <p className="text-xs text-[#94a3b8] mb-5">{t('scoreFrequencyDesc', lang) || 'Frequency of scores across all students in the filtered exams'}</p>
-                        <div style={{ height: 280, minWidth: 0 }}>
-                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <div style={{ height: 280, minWidth: 0, width: '100%' }}>
+                            <ResponsiveContainer width="100%" height={280}>
                                 <ComposedChart data={histData} margin={{ top: 10, right: 30, left: 10, bottom: 35 }} barCategoryGap="8%">
                                     <defs>
                                         <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
@@ -605,7 +666,7 @@ export default function Exams() {
                             </thead>
                             <tbody className="divide-y divide-[#e2e8f0]">
                                 {filteredExams.map((e, i) => (
-                                    <motion.tr key={`${e.examid}-${e.classid}-${e.sectionid}`}
+                                    <motion.tr key={`${e.examid}-${e.classid}-${e.sectionid}-${e.subjectid}-${e.attempt_number}`}
                                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}
                                         className={`transition-colors cursor-pointer ${e.status === 'cancelled' ? 'opacity-60 bg-slate-50' : 'hover:bg-slate-50'}`}
                                         onClick={() => navigate(`/exams/${e.examid}/${e.classid}/${e.sectionid}/${e.subjectid}/upload`)}>
@@ -651,34 +712,7 @@ export default function Exams() {
                                                 {/* Start Grading — only for marked exams */}
                                                 {e.status === 'marked' && (
                                                     <button title="Process Marks"
-                                                        onClick={async (ev) => {
-                                                            ev.stopPropagation();
-                                                            try {
-                                                                const response = await fetch('https://n8n.srv1133195.hstgr.cloud/webhook-test/strat_grading', {
-                                                                    method: 'POST',
-                                                                    headers: { 'Content-Type': 'application/json' },
-                                                                    body: JSON.stringify({
-                                                                        eventType: 'start-grading-workflow',
-                                                                        examid: e.examid, classid: e.classid, sectionid: e.sectionid,
-                                                                        subjectid: e.subjectid, employeeid: user.employeeid,
-                                                                        timestamp: new Date().toISOString(),
-                                                                    }),
-                                                                });
-                                                                // Always update status to submitted regardless of webhook result
-                                                                await dbQuery(
-                                                                    `questions_exams_employee_subjects_sections_tbl?examid=eq.${e.examid}&employeeid=eq.${user.employeeid}&classid=eq.${e.classid}&sectionid=eq.${e.sectionid}&subjectid=eq.${e.subjectid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`,
-                                                                    'PATCH',
-                                                                    { status: 'submitted' },
-                                                                    'return=minimal'
-                                                                );
-                                                                if (response.ok) {
-                                                                    addToast('Marks processing started!', 'success');
-                                                                } else {
-                                                                    addToast('Status updated. Workflow trigger failed — check n8n.', 'warning');
-                                                                }
-                                                                await fetchExams();
-                                                            } catch (err) { addToast(`Error: ${err.message}`, 'error'); }
-                                                        }}
+                                                        onClick={(ev) => { ev.stopPropagation(); setProcessModal({ open: true, exam: e }); }}
                                                         className="p-2 rounded-lg text-green-600 hover:bg-green-50 transition-all">
                                                         <Play className="h-4 w-4" />
                                                     </button>
@@ -787,8 +821,8 @@ export default function Exams() {
                                 </div>
 
                                 {/* Bar chart */}
-                                <div style={{ height: Math.max(200, examVisual.data.length * 44), minWidth: 0 }}>
-                                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                <div style={{ height: Math.max(200, examVisual.data.length * 44), minWidth: 0, width: '100%' }}>
+                                    <ResponsiveContainer width="100%" height={Math.max(200, examVisual.data.length * 44)}>
                                         <BarChart data={examVisual.data} layout="vertical" margin={{ top: 4, right: 70, left: 8, bottom: 4 }} barSize={22}>
                                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                                             <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} />
@@ -864,6 +898,18 @@ export default function Exams() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                open={processModal.open}
+                title={isAr ? 'بدء المعالجة؟' : 'Start Grading?'}
+                message={isAr ? 'سيتم إرسال الامتحان وبدء عملية التصحيح التلقائي. لا يمكن التراجع عن هذا الإجراء.' : 'This will submit the exam and trigger the automatic grading workflow. This cannot be undone.'}
+                confirmLabel={isAr ? 'نعم، ابدأ' : 'Start Grading'}
+                cancelLabel={isAr ? 'إلغاء' : 'Cancel'}
+                variant="primary"
+                loading={processing}
+                onConfirm={handleProcessMarks}
+                onCancel={() => setProcessModal({ open: false, exam: null })}
+            />
         </div>
     );
 }

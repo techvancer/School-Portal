@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2, Save, Upload, Download, FileSpreadsheet, X } from 'lucide-react';
 import Breadcrumb from '../components/Breadcrumb';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
@@ -60,6 +61,7 @@ export default function TeacherExamUpload() {
     // Change 4: track count of students with real answers in DB
     const [dbAnsweredCount, setDbAnsweredCount] = useState(0);
     const [preview, setPreview] = useState(null);
+    const [confirm, setConfirm] = useState({ open: false });
 
     const activeTab = 'upload';
     const rawExamStatus = String(meta?.status || '').toLowerCase();
@@ -136,10 +138,13 @@ export default function TeacherExamUpload() {
             const subject = subjectRows[0];
             const assignment = assignmentRows?.[0];
 
-            // Fetch only the students enrolled in this class/section (not the entire students_tbl)
-            const enrolledIds = sectionStudentRows.map(r => r.studentid);
-            const studentRows = enrolledIds.length
-                ? await rest('students_tbl', { studentid: `in.(${enrolledIds})`, select: '*' })
+            // Fetch actively enrolled students + ANY student who has historical answers for this exact exam attempt
+            const enrolledIds = new Set(sectionStudentRows.map(r => r.studentid));
+            existingAnswers.forEach(ans => enrolledIds.add(ans.studentid));
+            
+            const uniqueIds = Array.from(enrolledIds);
+            const studentRows = uniqueIds.length
+                ? await rest('students_tbl', { studentid: `in.(${uniqueIds.join(',')})`, select: '*' })
                 : [];
             const enrolledStudents = studentRows;
             // Store full question objects
@@ -707,7 +712,7 @@ export default function TeacherExamUpload() {
                                 <h2 className="text-base font-bold text-[#0f172a]">{t('preview', lang)}</h2>
                                 <button
                                     type="button"
-                                    onClick={handleUpload}
+                                    onClick={() => setConfirm({ open: true, action: 'upload' })}
                                     disabled={uploading || isManualEntryLocked}
                                     className="px-5 py-2 bg-[#1d4ed8] hover:bg-[#1e40af] text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-60"
                                 >
@@ -854,7 +859,7 @@ export default function TeacherExamUpload() {
                                 <div className="flex justify-end">
                                     <button
                                         type="button"
-                                        onClick={handleSaveManual}
+                                        onClick={() => setConfirm({ open: true, action: 'save' })}
                                         disabled={saving || isManualEntryLocked}
                                         className="px-6 py-2.5 bg-[#1d4ed8] hover:bg-[#1e40af] text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-60"
                                     >
@@ -930,6 +935,20 @@ export default function TeacherExamUpload() {
                 </div>
             </div>
         )}
+
+        <ConfirmDialog
+            open={confirm.open}
+            title={confirm.action === 'upload' ? (isAr ? 'رفع الدرجات؟' : 'Upload Grades?') : (isAr ? 'حفظ الدرجات؟' : 'Save Marks?')}
+            message={confirm.action === 'upload'
+                ? (isAr ? 'سيتم معالجة الملف المرفوع وحفظ جميع الدرجات في قاعدة البيانات.' : 'The uploaded file will be processed and all marks saved to the database.')
+                : (isAr ? 'سيتم حفظ جميع الدرجات المدخلة في قاعدة البيانات.' : 'All entered marks will be saved to the database.')}
+            confirmLabel={confirm.action === 'upload' ? (isAr ? 'رفع' : 'Upload') : (isAr ? 'حفظ' : 'Save')}
+            cancelLabel={isAr ? 'إلغاء' : 'Cancel'}
+            variant="primary"
+            loading={confirm.action === 'upload' ? uploading : saving}
+            onConfirm={() => { setConfirm({ open: false }); confirm.action === 'upload' ? handleUpload() : handleSaveManual(); }}
+            onCancel={() => setConfirm({ open: false })}
+        />
         </div>
     );
 }

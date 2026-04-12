@@ -10,6 +10,7 @@ import { insert, update, rest, dbQuery } from '../lib/supabaseClient';
 import { useFilterData } from '../lib/useFilterData';
 import { buildFilters, EMPTY_FILTER, getStudentFullName, calcGrade, loadGrades, calcGradeFromList } from '../lib/helpers';
 import FilterBar from '../components/FilterBar';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useLocation } from 'react-router-dom';
 
 
@@ -49,6 +50,7 @@ export default function EditMarks() {
     const [marks,     setMarks]     = useState({});
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving,  setIsSaving]  = useState(false);
+    const [confirm, setConfirm] = useState({ open: false });
     const [loaded,    setLoaded]    = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const [grades, setGrades] = useState([]);
@@ -206,9 +208,12 @@ export default function EditMarks() {
                 }),
             ]);
 
-            const enrolled = stuScRows.map(r => {
-                const s = stuList.find(st => st.studentid === r.studentid);
-                return { ...s, fullName: getStudentFullName(s, lang) };
+            const enrolledIds = new Set(stuScRows.map(r => r.studentid));
+            existing.forEach(ans => enrolledIds.add(ans.studentid));
+
+            const enrolled = Array.from(enrolledIds).map(id => {
+                const s = stuList.find(st => st.studentid === id);
+                return s ? { ...s, fullName: getStudentFullName(s, lang) } : null;
             }).filter(Boolean);
 
             setStudents(enrolled);
@@ -547,7 +552,7 @@ export default function EditMarks() {
                                 </table>
                             </div>
                             <div className="p-4 border-t border-[#e2e8f0] bg-slate-50 flex justify-end">
-                                <button onClick={handleSave} disabled={isSaving}
+                                <button onClick={() => setConfirm({ open: true })} disabled={isSaving}
                                     className="btn-primary h-11 px-8 font-bold flex items-center gap-2 shadow-md disabled:opacity-60">
                                     {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> {t('saving', lang) || 'Saving...'}</> : <><Save className="h-4 w-4" /> {t('saveAllChanges', lang) || 'Save All Changes'}</>}
                                 </button>
@@ -556,6 +561,17 @@ export default function EditMarks() {
                     )}
                 </motion.div>
             )}
+        <ConfirmDialog
+            open={confirm.open}
+            title={isAr ? 'حفظ التغييرات؟' : 'Save Changes?'}
+            message={isAr ? 'سيتم تحديث جميع الدرجات المعدّلة في قاعدة البيانات.' : 'All edited marks will be updated in the database.'}
+            confirmLabel={isAr ? 'حفظ' : 'Save'}
+            cancelLabel={isAr ? 'إلغاء' : 'Cancel'}
+            variant="primary"
+            loading={isSaving}
+            onConfirm={() => { setConfirm({ open: false }); handleSave(); }}
+            onCancel={() => setConfirm({ open: false })}
+        />
         </div>
     );
 }

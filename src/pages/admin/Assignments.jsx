@@ -3,6 +3,7 @@ import { useLang } from '../../context/LanguageContext';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Trash2, X, Loader2, User, BookOpen, Layers, Shield, Edit2 } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -23,12 +24,14 @@ export default function AdminAssignments() {
     const [editingRow, setEditingRow] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [deleteModal, setDeleteModal] = useState({ show: false, row: null });
+    const [saveConfirm, setSaveConfirm] = useState({ open: false });
 
     const [students, setStudents] = useState([]);
     const [classes, setClasses] = useState([]);
     const [sectionClasses, setSectionClasses] = useState([]);
     const [sections, setSections] = useState([]);
     const [stages, setStages] = useState([]);
+    const [curriculums, setCurriculums] = useState([]);
     const [subjects, setSubjects] = useState([]);
     const [employees, setEmployees] = useState({ all: [], teachers: [], supervisors: [] });
     const [assignments, setAssignments] = useState({ students: [], subjects: [], supervisors: [], teachers: [] });
@@ -39,7 +42,7 @@ export default function AdminAssignments() {
         try {
             setLoading(true);
             const [clRows, clTbl, secRows, stgRows, subRows, empRows, stuRows,
-                stuScRows, subClRows, empStgRows, empTchRows, empTypesRows] = await Promise.all([
+                stuScRows, subClRows, empStgRows, empTchRows, empTypesRows, curRows] = await Promise.all([
                 rest('sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
                 rest('classes_tbl', { select: '*' }),
                 rest('sections_tbl', { select: '*' }),
@@ -52,6 +55,7 @@ export default function AdminAssignments() {
                 rest('employees_types_stages_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
                 rest('employees_sections_subjects_classes_semisters_curriculums_tbl', { select: '*' }),
                 rest('employees_types_tbl', { select: '*' }),
+                rest('curriculums_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }).catch(() => []),
             ]);
 
             setStudents(stuRows);
@@ -59,6 +63,7 @@ export default function AdminAssignments() {
             setSectionClasses(clRows);
             setSections(secRows);
             setStages([...new Map(stgRows.map(s => [s.stageid, s])).values()]);
+            setCurriculums(curRows);
             setSubjects(subRows);
 
             const teacherIds = new Set(empTypesRows.filter(t => t.typeid === 1).map(t => t.employeeid));
@@ -70,20 +75,24 @@ export default function AdminAssignments() {
                 const cl  = clTbl.find(c => c.classid === sc.classid);
                 const sec = secRows.find(s => s.sectionid === sc.sectionid);
                 const stg = stgRows.find(s => String(s.stageid) === String(sc.stageid));
-                return { ...sc, studentname: _getStudentName(stu, lang), fullname: _getStudentName(stu, lang), classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname, sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname, stagename: getField(stg, 'stagename', 'stagename_en', lang) };
+                const cur = curRows.find(c => String(c.curriculumid) === String(sc.curriculumid));
+                return { ...sc, studentname: _getStudentName(stu, lang), fullname: _getStudentName(stu, lang), classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname, sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname, stagename: getField(stg, 'stagename', 'stagename_en', lang), curriculumname: getField(cur, 'curriculumname', 'curriculumname_en', lang) || cur?.curriculumname };
             });
 
             const subAssignments = subClRows.map(sc => {
                 const sub = subRows.find(s => s.subjectid === sc.subjectid);
                 const cl = clTbl.find(c => c.classid === sc.classid);
                 const sec = secRows.find(s => s.sectionid === sc.sectionid);
-                return { ...sc, subjectname: getField(sub, 'subjectname', 'Subjectname_en', lang), classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname, sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname };
+                const stg = stgRows.find(s => String(s.stageid) === String(sc.stageid));
+                const cur = curRows.find(c => String(c.curriculumid) === String(sc.curriculumid));
+                return { ...sc, subjectname: getField(sub, 'subjectname', 'Subjectname_en', lang), classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname, sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname, stagename: getField(stg, 'stagename', 'stagename_en', lang), curriculumname: getField(cur, 'curriculumname', 'curriculumname_en', lang) || cur?.curriculumname };
             });
 
             const supAssignments = empStgRows.map(row => {
                 const emp = empRows.find(e => e.employeeid === row.employeeid);
                 const stg = stgRows.find(s => String(s.stageid) === String(row.stageid));
-                return { ...row, supervisorname: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename, stagename: getField(stg, 'stagename', 'stagename_en', lang) };
+                const cur = curRows.find(c => String(c.curriculumid) === String(row.curriculumid));
+                return { ...row, supervisorname: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename, stagename: getField(stg, 'stagename', 'stagename_en', lang), curriculumname: getField(cur, 'curriculumname', 'curriculumname_en', lang) || cur?.curriculumname };
             });
 
             const tchAssignments = empTchRows.map(row => {
@@ -91,7 +100,9 @@ export default function AdminAssignments() {
                 const sub = subRows.find(s => s.subjectid === row.subjectid);
                 const cl = clTbl.find(c => c.classid === row.classid);
                 const sec = secRows.find(s => s.sectionid === row.sectionid);
-                return { ...row, teachername: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename, subjectname: getField(sub, 'subjectname', 'Subjectname_en', lang), classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname, sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname };
+                const stg = stgRows.find(s => String(s.stageid) === String(row.stageid));
+                const cur = curRows.find(c => String(c.curriculumid) === String(row.curriculumid));
+                return { ...row, teachername: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename, subjectname: getField(sub, 'subjectname', 'Subjectname_en', lang), classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname, sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname, stagename: getField(stg, 'stagename', 'stagename_en', lang), curriculumname: getField(cur, 'curriculumname', 'curriculumname_en', lang) || cur?.curriculumname };
             });
 
             setAssignments({ students: stuAssignments, subjects: subAssignments, supervisors: supAssignments, teachers: tchAssignments });
@@ -190,7 +201,7 @@ export default function AdminAssignments() {
                     return;
                 }
             } else if (activeTab === 'supervisors') {
-                await insert('employees_types_stages_tbl', { employeeid: parseInt(newRow.employeeid), typeid: 2, stageid: parseInt(newRow.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: user.curriculumid || 1 });
+                await insert('employees_types_stages_tbl', { employeeid: parseInt(newRow.employeeid), typeid: 2, stageid: parseInt(newRow.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(newRow.curriculumid) || user.curriculumid || 1 });
             } else if (activeTab === 'teachers') {
                 await assignTeacherToClass(
                     parseInt(newRow.employeeid), parseInt(newRow.subjectid),
@@ -239,7 +250,7 @@ export default function AdminAssignments() {
             if (sc) {
                 await dbQuery(`students_sections_classes_tbl?studentid=eq.${newRow.studentid}&classid=eq.${sc.classid}&sectionid=eq.${sc.sectionid}`, 'DELETE');
             }
-            await insert('students_sections_classes_tbl', { studentid: parseInt(newRow.studentid), classid: parseInt(newRow.classid), sectionid: parseInt(newRow.sectionid), stageid: parseInt(newRow.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: user.curriculumid || 1 });
+            await insert('students_sections_classes_tbl', { studentid: parseInt(newRow.studentid), classid: parseInt(newRow.classid), sectionid: parseInt(newRow.sectionid), stageid: parseInt(newRow.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(newRow.curriculumid) || user.curriculumid || 1 });
             addToast(t('studentAssigned', lang), 'success');
             setAddingNew(false); setNewRow({});
             fetchData();
@@ -255,13 +266,13 @@ export default function AdminAssignments() {
         try {
             if (activeTab === 'students') {
                 await dbQuery(`students_sections_classes_tbl?studentid=eq.${row.studentid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}`, 'DELETE');
-                await insert('students_sections_classes_tbl', { studentid: row.studentid, classid: parseInt(editForm.classid), sectionid: parseInt(editForm.sectionid), stageid: parseInt(editForm.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: user.curriculumid || 1 });
+                await insert('students_sections_classes_tbl', { studentid: row.studentid, classid: parseInt(editForm.classid), sectionid: parseInt(editForm.sectionid), stageid: parseInt(editForm.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(editForm.curriculumid) || row.curriculumid || 1 });
             } else if (activeTab === 'subjects') {
                 await dbQuery(`sections_subjects_classes_tbl?subjectid=eq.${row.subjectid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}&schoolid=eq.${user.schoolid}`, 'DELETE');
-                await insert('sections_subjects_classes_tbl', { subjectid: row.subjectid, classid: parseInt(editForm.classid), sectionid: parseInt(editForm.sectionid), schoolid: user.schoolid, branchid: user.branchid, stageid: row.stageid || 1, curriculumid: row.curriculumid || 1, divisionid: row.divisionid || 1 });
+                await insert('sections_subjects_classes_tbl', { subjectid: row.subjectid, classid: parseInt(editForm.classid), sectionid: parseInt(editForm.sectionid), schoolid: user.schoolid, branchid: user.branchid, stageid: parseInt(editForm.stageid) || row.stageid || 1, curriculumid: parseInt(editForm.curriculumid) || row.curriculumid || 1, divisionid: row.divisionid || 1 });
             } else if (activeTab === 'supervisors') {
                 await dbQuery(`employees_types_stages_tbl?employeeid=eq.${row.employeeid}&stageid=eq.${row.stageid}`, 'DELETE');
-                await insert('employees_types_stages_tbl', { employeeid: row.employeeid, typeid: 2, stageid: parseInt(editForm.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: user.curriculumid || 1 });
+                await insert('employees_types_stages_tbl', { employeeid: row.employeeid, typeid: 2, stageid: parseInt(editForm.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(editForm.curriculumid) || row.curriculumid || 1 });
             } else if (activeTab === 'teachers') {
                 const newClassid = parseInt(editForm.classid);
                 const newSectionid = parseInt(editForm.sectionid);
@@ -271,7 +282,7 @@ export default function AdminAssignments() {
                     if (existsCheck.length) throw new Error('A teacher is already assigned to teach this subject in this class section. Only one teacher can teach a subject per class section.');
                 }
                 await dbQuery(`employees_sections_subjects_classes_semisters_curriculums_tbl?employeeid=eq.${row.employeeid}&subjectid=eq.${row.subjectid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}`, 'DELETE');
-                await insert('employees_sections_subjects_classes_semisters_curriculums_tbl', { employeeid: row.employeeid, subjectid: row.subjectid, classid: newClassid, sectionid: newSectionid, stageid: row.stageid, semisterid: row.semisterid || 1, yearid: row.yearid || 2026, curriculumid: row.curriculumid || 1, divisionid: row.divisionid || 1, branchid: user.branchid, schoolid: user.schoolid });
+                await insert('employees_sections_subjects_classes_semisters_curriculums_tbl', { employeeid: row.employeeid, subjectid: row.subjectid, classid: newClassid, sectionid: newSectionid, stageid: parseInt(editForm.stageid) || row.stageid, semisterid: row.semisterid || 1, yearid: row.yearid || 2026, curriculumid: parseInt(editForm.curriculumid) || row.curriculumid || 1, divisionid: row.divisionid || 1, branchid: user.branchid, schoolid: user.schoolid });
             }
             addToast(t('assignmentUpdated', lang), 'success');
             setEditingRow(null);
@@ -320,6 +331,17 @@ export default function AdminAssignments() {
         return classes.filter(c => ids.has(c.classid));
     }, [sectionClasses, classes]);
 
+    // Return only sections valid for a given class + stage combination
+    const filteredSectionsFor = (classid, stageid) => {
+        if (!classid || !stageid) return sections;
+        const validIds = new Set(
+            sectionClasses
+                .filter(sc => String(sc.classid) === String(classid) && String(sc.stageid) === String(stageid))
+                .map(sc => sc.sectionid)
+        );
+        return validIds.size ? sections.filter(s => validIds.has(s.sectionid)) : sections;
+    };
+
 
     // Re-fetch when language changes so all labels/names update without page refresh
     useEffect(() => {
@@ -359,10 +381,10 @@ export default function AdminAssignments() {
                     <table className={`w-full ${isAr ? 'text-right' : 'text-left'} border-collapse`}>
                         <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
                             <tr>
-                                {activeTab === 'students' && <><SortableTh col="studentname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['studentname']} isSearchOpen={activeSearch==='studentname'} onSearchOpen={()=>setActiveSearch('studentname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('studentname','');}} onSearchChange={v=>setColumnSearch('studentname',v)}>{t('student', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="stagename" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['stagename']} isSearchOpen={activeSearch==='stagename'} onSearchOpen={()=>setActiveSearch('stagename')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('stagename','');}} onSearchChange={v=>setColumnSearch('stagename',v)}>{t('stage', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
-                                {activeTab === 'subjects' && <><SortableTh col="subjectname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['subjectname']} isSearchOpen={activeSearch==='subjectname'} onSearchOpen={()=>setActiveSearch('subjectname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectname','');}} onSearchChange={v=>setColumnSearch('subjectname',v)}>{t('subject', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
-                                {activeTab === 'supervisors' && <><SortableTh col="supervisorname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['supervisorname']} isSearchOpen={activeSearch==='supervisorname'} onSearchOpen={()=>setActiveSearch('supervisorname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('supervisorname','');}} onSearchChange={v=>setColumnSearch('supervisorname',v)}>{t('supervisor', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="stagename" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['stagename']} isSearchOpen={activeSearch==='stagename'} onSearchOpen={()=>setActiveSearch('stagename')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('stagename','');}} onSearchChange={v=>setColumnSearch('stagename',v)}>{t('stage', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
-                                {activeTab === 'teachers' && <><SortableTh col="teachername" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['teachername']} isSearchOpen={activeSearch==='teachername'} onSearchOpen={()=>setActiveSearch('teachername')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('teachername','');}} onSearchChange={v=>setColumnSearch('teachername',v)}>{t('teacher', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="subjectname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['subjectname']} isSearchOpen={activeSearch==='subjectname'} onSearchOpen={()=>setActiveSearch('subjectname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectname','');}} onSearchChange={v=>setColumnSearch('subjectname',v)}>{t('subject', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
+                                {activeTab === 'students' && <><SortableTh col="studentname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['studentname']} isSearchOpen={activeSearch==='studentname'} onSearchOpen={()=>setActiveSearch('studentname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('studentname','');}} onSearchChange={v=>setColumnSearch('studentname',v)}>{t('student', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="stagename" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['stagename']} isSearchOpen={activeSearch==='stagename'} onSearchOpen={()=>setActiveSearch('stagename')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('stagename','');}} onSearchChange={v=>setColumnSearch('stagename',v)}>{t('stage', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="curriculumname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['curriculumname']} isSearchOpen={activeSearch==='curriculumname'} onSearchOpen={()=>setActiveSearch('curriculumname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('curriculumname','');}} onSearchChange={v=>setColumnSearch('curriculumname',v)}>{t('curriculum', lang)}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
+                                {activeTab === 'subjects' && <><SortableTh col="subjectname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['subjectname']} isSearchOpen={activeSearch==='subjectname'} onSearchOpen={()=>setActiveSearch('subjectname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectname','');}} onSearchChange={v=>setColumnSearch('subjectname',v)}>{t('subject', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="stagename" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['stagename']} isSearchOpen={activeSearch==='stagename'} onSearchOpen={()=>setActiveSearch('stagename')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('stagename','');}} onSearchChange={v=>setColumnSearch('stagename',v)}>{t('stage', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="curriculumname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['curriculumname']} isSearchOpen={activeSearch==='curriculumname'} onSearchOpen={()=>setActiveSearch('curriculumname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('curriculumname','');}} onSearchChange={v=>setColumnSearch('curriculumname',v)}>{t('curriculum', lang)}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
+                                {activeTab === 'supervisors' && <><SortableTh col="supervisorname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['supervisorname']} isSearchOpen={activeSearch==='supervisorname'} onSearchOpen={()=>setActiveSearch('supervisorname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('supervisorname','');}} onSearchChange={v=>setColumnSearch('supervisorname',v)}>{t('supervisor', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="stagename" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['stagename']} isSearchOpen={activeSearch==='stagename'} onSearchOpen={()=>setActiveSearch('stagename')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('stagename','');}} onSearchChange={v=>setColumnSearch('stagename',v)}>{t('stage', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="curriculumname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['curriculumname']} isSearchOpen={activeSearch==='curriculumname'} onSearchOpen={()=>setActiveSearch('curriculumname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('curriculumname','');}} onSearchChange={v=>setColumnSearch('curriculumname',v)}>{t('curriculum', lang)}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
+                                {activeTab === 'teachers' && <><SortableTh col="teachername" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['teachername']} isSearchOpen={activeSearch==='teachername'} onSearchOpen={()=>setActiveSearch('teachername')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('teachername','');}} onSearchChange={v=>setColumnSearch('teachername',v)}>{t('teacher', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="subjectname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['subjectname']} isSearchOpen={activeSearch==='subjectname'} onSearchOpen={()=>setActiveSearch('subjectname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectname','');}} onSearchChange={v=>setColumnSearch('subjectname',v)}>{t('subject', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="stagename" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['stagename']} isSearchOpen={activeSearch==='stagename'} onSearchOpen={()=>setActiveSearch('stagename')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('stagename','');}} onSearchChange={v=>setColumnSearch('stagename',v)}>{t('stage', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}{addingNew && <span className="text-red-500"> *</span>}</SortableTh><SortableTh col="curriculumname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['curriculumname']} isSearchOpen={activeSearch==='curriculumname'} onSearchOpen={()=>setActiveSearch('curriculumname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('curriculumname','');}} onSearchChange={v=>setColumnSearch('curriculumname',v)}>{t('curriculum', lang)}</SortableTh><th className="px-6 py-4 text-[11px] font-black text-[#64748b] uppercase">{t('actions', lang)}</th></>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[#f1f5f9]">
@@ -377,13 +399,13 @@ export default function AdminAssignments() {
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value })}>
+                                                <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value, sectionid: '' })}>
                                                     <option value="">{t('selectStage', lang)}</option>
                                                     {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <select className={sel} value={newRow.classid || ''} onChange={e => setNewRow({ ...newRow, classid: e.target.value })}>
+                                                <select className={sel} value={newRow.classid || ''} onChange={e => setNewRow({ ...newRow, classid: e.target.value, sectionid: '' })}>
                                                     <option value="">{t('selectClass', lang)}</option>
                                                     {createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname}</option>)}
                                                 </select>
@@ -391,7 +413,13 @@ export default function AdminAssignments() {
                                             <td className="px-4 py-3 text-center">
                                                 <select className={sel} value={newRow.sectionid || ''} onChange={e => setNewRow({ ...newRow, sectionid: e.target.value })}>
                                                     <option value="">{t('selectSection', lang)}</option>
-                                                    {sections.map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
+                                                    {filteredSectionsFor(newRow.classid, newRow.stageid).map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <select className={sel} value={newRow.curriculumid || ''} onChange={e => setNewRow({ ...newRow, curriculumid: e.target.value })}>
+                                                    <option value="">{t('curriculum', lang)}</option>
+                                                    {curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}
                                                 </select>
                                             </td>
                                         </>}
@@ -403,7 +431,13 @@ export default function AdminAssignments() {
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <select className={sel} value={newRow.classid || ''} onChange={e => setNewRow({ ...newRow, classid: e.target.value })}>
+                                                <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value, sectionid: '' })}>
+                                                    <option value="">{t('stage', lang)}</option>
+                                                    {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <select className={sel} value={newRow.classid || ''} onChange={e => setNewRow({ ...newRow, classid: e.target.value, sectionid: '' })}>
                                                     <option value="">{t('class', lang)}</option>
                                                     {createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname || ''}</option>)}
                                                 </select>
@@ -411,17 +445,14 @@ export default function AdminAssignments() {
                                             <td className="px-4 py-3 text-center">
                                                 <select className={sel} value={newRow.sectionid || ''} onChange={e => setNewRow({ ...newRow, sectionid: e.target.value })}>
                                                     <option value="">{t('section', lang)}</option>
-                                                    {sections.map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
+                                                    {filteredSectionsFor(newRow.classid, newRow.stageid).map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <div className="flex flex-col items-start gap-0.5">
-                                                    <span className="text-[10px] text-red-500 font-semibold">{t('stage', lang)} <span>*</span></span>
-                                                    <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value })}>
-                                                        <option value="">{t('stage', lang)}</option>
-                                                        {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
-                                                    </select>
-                                                </div>
+                                                <select className={sel} value={newRow.curriculumid || ''} onChange={e => setNewRow({ ...newRow, curriculumid: e.target.value })}>
+                                                    <option value="">{t('curriculum', lang)}</option>
+                                                    {curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}
+                                                </select>
                                             </td>
                                         </>}
                                         {activeTab === 'supervisors' && <>
@@ -435,6 +466,12 @@ export default function AdminAssignments() {
                                                 <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value })}>
                                                     <option value="">{t('stage', lang)}</option>
                                                     {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <select className={sel} value={newRow.curriculumid || ''} onChange={e => setNewRow({ ...newRow, curriculumid: e.target.value })}>
+                                                    <option value="">{t('curriculum', lang)}</option>
+                                                    {curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}
                                                 </select>
                                             </td>
                                         </>}
@@ -452,7 +489,13 @@ export default function AdminAssignments() {
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <select className={sel} value={newRow.classid || ''} onChange={e => setNewRow({ ...newRow, classid: e.target.value })}>
+                                                <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value, sectionid: '' })}>
+                                                    <option value="">{t('stage', lang)}</option>
+                                                    {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <select className={sel} value={newRow.classid || ''} onChange={e => setNewRow({ ...newRow, classid: e.target.value, sectionid: '' })}>
                                                     <option value="">{t('class', lang)}</option>
                                                     {createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname || ''}</option>)}
                                                 </select>
@@ -460,17 +503,14 @@ export default function AdminAssignments() {
                                             <td className="px-4 py-3 text-center">
                                                 <select className={sel} value={newRow.sectionid || ''} onChange={e => setNewRow({ ...newRow, sectionid: e.target.value })}>
                                                     <option value="">{t('section', lang)}</option>
-                                                    {sections.map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
+                                                    {filteredSectionsFor(newRow.classid, newRow.stageid).map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <div className="flex flex-col items-start gap-0.5">
-                                                    <span className="text-[10px] text-red-500 font-semibold">{t('stage', lang)} <span>*</span></span>
-                                                    <select className={sel} value={newRow.stageid || ''} onChange={e => setNewRow({ ...newRow, stageid: e.target.value })}>
-                                                        <option value="">{t('stage', lang)}</option>
-                                                        {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
-                                                    </select>
-                                                </div>
+                                                <select className={sel} value={newRow.curriculumid || ''} onChange={e => setNewRow({ ...newRow, curriculumid: e.target.value })}>
+                                                    <option value="">{t('curriculum', lang)}</option>
+                                                    {curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}
+                                                </select>
                                             </td>
                                         </>}
                                         <td className="px-4 py-3 text-center">
@@ -497,32 +537,39 @@ export default function AdminAssignments() {
                                         <td className="px-4 py-3 text-center text-sm font-bold text-[#0f172a]">{row.studentname}</td>
                                         {editingRow === i ? <>
                                             <td className="px-4 py-3 text-center">
-                                                <select className={sel} value={editForm.stageid || ''} onChange={e => setEditForm({...editForm, stageid: e.target.value})}>
+                                                <select className={sel} value={editForm.stageid || ''} onChange={e => setEditForm({...editForm, stageid: e.target.value, sectionid: ''})}>
                                                     {stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <select className={sel} value={editForm.classid || ''} onChange={e => setEditForm({...editForm, classid: e.target.value})}>
+                                                <select className={sel} value={editForm.classid || ''} onChange={e => setEditForm({...editForm, classid: e.target.value, sectionid: ''})}>
                                                     {createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname || ''}</option>)}
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <select className={sel} value={editForm.sectionid || ''} onChange={e => setEditForm({...editForm, sectionid: e.target.value})}>
-                                                    {sections.map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
+                                                    {filteredSectionsFor(editForm.classid, editForm.stageid).map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <select className={sel} value={editForm.curriculumid || ''} onChange={e => setEditForm({...editForm, curriculumid: e.target.value})}>
+                                                    <option value="">{t('curriculum', lang)}</option>
+                                                    {curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}
                                                 </select>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <div className="flex gap-2">
-                                                    <button onClick={handleSaveEdit} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button>
+                                                    <button onClick={() => setSaveConfirm({ open: true })} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button>
                                                 </div>
                                             </td>
                                         </> : <>
                                             <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.stagename || '—'}</td>
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{t('class', lang)} {row.classname}</td>
                                             <td className="px-4 py-3 text-center"><span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-[#eff6ff] text-[#1d4ed8] text-xs font-bold border border-blue-100">{row.sectionname}</span></td>
+                                            <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid) }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
+                                                    <button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
                                                     <button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
                                                 </div>
                                             </td>
@@ -531,36 +578,46 @@ export default function AdminAssignments() {
                                     {activeTab === 'subjects' && <>
                                         <td className="px-4 py-3 text-center text-sm font-bold text-[#0f172a]">{row.subjectname}</td>
                                         {editingRow === i ? <>
-                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.classid || ''} onChange={e => setEditForm({...editForm, classid: e.target.value})}>{createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname}</option>)}</select></td>
-                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.sectionid || ''} onChange={e => setEditForm({...editForm, sectionid: e.target.value})}>{sections.map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}</select></td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleSaveEdit} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button></div></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.stageid || ''} onChange={e => setEditForm({...editForm, stageid: e.target.value, sectionid: ''})}><option value="">{t('selectStage', lang)}</option>{stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.classid || ''} onChange={e => setEditForm({...editForm, classid: e.target.value, sectionid: ''})}><option value="">{t('class', lang)}</option>{createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.sectionid || ''} onChange={e => setEditForm({...editForm, sectionid: e.target.value})}><option value="">{t('section', lang)}</option>{filteredSectionsFor(editForm.classid, editForm.stageid).map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.curriculumid || ''} onChange={e => setEditForm({...editForm, curriculumid: e.target.value})}><option value="">{t('curriculum', lang)}</option>{curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setSaveConfirm({ open: true })} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button></div></td>
                                         </> : <>
+                                            <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.stagename || '—'}</td>
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{t('class', lang)} {row.classname}</td>
                                             <td className="px-4 py-3 text-center"><span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-[#eff6ff] text-[#1d4ed8] text-xs font-bold border border-blue-100">{row.sectionname}</span></td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid) }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
+                                            <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid || ''), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
                                         </>}
                                     </>}
                                     {activeTab === 'supervisors' && <>
                                         <td className="px-4 py-3 text-center text-sm font-bold text-[#0f172a]">{row.supervisorname || "—"}</td>
                                         {editingRow === i ? <>
                                             <td className="px-4 py-3 text-center"><select className={sel} value={editForm.stageid || ''} onChange={e => setEditForm({...editForm, stageid: e.target.value})}>{stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleSaveEdit} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button></div></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.curriculumid || ''} onChange={e => setEditForm({...editForm, curriculumid: e.target.value})}><option value="">{t('curriculum', lang)}</option>{curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setSaveConfirm({ open: true })} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button></div></td>
                                         </> : <>
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.stagename}</td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ stageid: String(row.stageid) }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
+                                            <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ stageid: String(row.stageid), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
                                         </>}
                                     </>}
                                     {activeTab === 'teachers' && <>
                                         <td className="px-4 py-3 text-center text-sm font-bold text-[#0f172a]">{row.teachername}</td>
                                         <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.subjectname}</td>
                                         {editingRow === i ? <>
-                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.classid || ''} onChange={e => setEditForm({...editForm, classid: e.target.value})}>{createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname}</option>)}</select></td>
-                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.sectionid || ''} onChange={e => setEditForm({...editForm, sectionid: e.target.value})}>{sections.map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}</select></td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleSaveEdit} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button></div></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.stageid || ''} onChange={e => setEditForm({...editForm, stageid: e.target.value, sectionid: ''})}><option value="">{t('stage', lang)}</option>{stages.map(s => <option key={s.stageid} value={s.stageid}>{getField(s, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.classid || ''} onChange={e => setEditForm({...editForm, classid: e.target.value, sectionid: ''})}><option value="">{t('class', lang)}</option>{createdClasses.map(c => <option key={c.classid} value={c.classid}>{t('class', lang)} {getField(c, 'classname', 'classname_en', lang) || c.classname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.sectionid || ''} onChange={e => setEditForm({...editForm, sectionid: e.target.value})}><option value="">{t('section', lang)}</option>{filteredSectionsFor(editForm.classid, editForm.stageid).map(s => <option key={s.sectionid} value={s.sectionid}>{getField(s, 'sectionname', 'sectionname_en', lang) || s.sectionname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><select className={sel} value={editForm.curriculumid || ''} onChange={e => setEditForm({...editForm, curriculumid: e.target.value})}><option value="">{t('curriculum', lang)}</option>{curriculums.map(c => <option key={c.curriculumid} value={c.curriculumid}>{getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname}</option>)}</select></td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setSaveConfirm({ open: true })} disabled={isLoading} className="btn-primary h-9 px-4 text-sm font-bold flex items-center gap-1 disabled:opacity-60">{isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{t('save', lang)}</button><button onClick={() => setEditingRow(null)} className="h-9 px-4 text-sm font-bold border border-[#e2e8f0] rounded-lg text-[#64748b] hover:bg-[#f8fafc]">{t('cancel', lang)}</button></div></td>
                                         </> : <>
+                                            <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.stagename || '—'}</td>
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{t('class', lang)} {row.classname}</td>
                                             <td className="px-4 py-3 text-center"><span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-[#eff6ff] text-[#1d4ed8] text-xs font-bold border border-blue-100">{row.sectionname}</span></td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid) }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
+                                            <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid || ''), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
                                         </>}
                                     </>}
                                 </tr>
@@ -587,6 +644,17 @@ export default function AdminAssignments() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                open={saveConfirm.open}
+                title={isAr ? 'تأكيد الحفظ' : 'Confirm Save'}
+                message={isAr ? 'هل تريد حفظ التغييرات على هذا التعيين؟' : 'Save changes to this assignment?'}
+                confirmLabel={isAr ? 'حفظ' : 'Save'}
+                variant="primary"
+                loading={isLoading}
+                onCancel={() => setSaveConfirm({ open: false })}
+                onConfirm={() => { setSaveConfirm({ open: false }); handleSaveEdit(); }}
+            />
         </div>
     );
 }

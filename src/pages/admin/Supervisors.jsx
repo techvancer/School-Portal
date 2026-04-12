@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Mail, Shield, Edit2, Trash2, X, Loader2, Download, Upload, Plus, Hash } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
 import FilterBar from '../../components/FilterBar';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -44,6 +45,8 @@ export default function AdminSupervisors() {
     const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch();
     const [isLoading, setIsLoading] = useState(false);
     const [csvErrors, setCsvErrors] = useState([]);
+    const [confirm, setConfirm] = useState({ open: false, action: null });
+    const [csvConfirmModal, setCsvConfirmModal] = useState({ show: false, rows: [], fileName: '' });
 
     // Load stages on mount so dropdown is populated before Apply Filter
     useEffect(() => {
@@ -225,6 +228,16 @@ export default function AdminSupervisors() {
                 addToast(`${errors.length} invalid row(s). Fix errors and re-upload.`, 'error');
                 return;
             }
+            setCsvConfirmModal({ show: true, rows: validRows, fileName: file.name });
+        } catch (err) { addToast(getErrorMessage(err, 'general'), 'error'); }
+        finally { setIsLoading(false); event.target.value = ''; }
+    };
+
+    const confirmCsvUpload = async () => {
+        const { rows: validRows } = csvConfirmModal;
+        setCsvConfirmModal({ show: false, rows: [], fileName: '' });
+        setIsLoading(true);
+        try {
             let count = 0;
             for (const row of validRows) {
                 const res = await fetch(EDGE_FUNCTION_URL, {
@@ -236,13 +249,8 @@ export default function AdminSupervisors() {
                     const data = await res.json();
                     const newId = data.employee?.employeeid || data.employeeid;
                     if (newId) {
-                        await dbQuery(`employees_types_tbl`, 'POST',
-                            { employeeid: newId, typeid: 2 },
-                            'return=minimal'
-                        );
-                        if (row.empmobile) await dbQuery(`employee_tbl?employeeid=eq.${newId}`, 'PATCH',
-                            { employeemobile: row.empmobile }
-                        );
+                        await dbQuery(`employees_types_tbl`, 'POST', { employeeid: newId, typeid: 2 }, 'return=minimal');
+                        if (row.empmobile) await dbQuery(`employee_tbl?employeeid=eq.${newId}`, 'PATCH', { employeemobile: row.empmobile });
                     }
                     count++;
                 }
@@ -251,7 +259,7 @@ export default function AdminSupervisors() {
             addToast(`${count} supervisor(s) uploaded.`, 'success');
             fetchData();
         } catch (err) { addToast(getErrorMessage(err, 'general'), 'error'); }
-        finally { setIsLoading(false); event.target.value = ''; }
+        finally { setIsLoading(false); }
     };
 
   
@@ -336,7 +344,7 @@ export default function AdminSupervisors() {
                                     <td className="px-4 py-3 text-center"><input className="input-field h-9" placeholder={t('email', lang)} value={formData.employeeemail} onChange={e => setFormData(p => ({ ...p, employeeemail: e.target.value }))} /></td>
                                     <td className="px-4 py-3 text-center"><input className="input-field h-9" placeholder={t('mobile', lang)} value={formData.employeemobile} onChange={e => setFormData(p => ({ ...p, employeemobile: e.target.value }))} /></td>
                                     <td className="px-4 py-3 text-center text-xs text-[#94a3b8] italic" colSpan={3}>{t('fromAssignments', lang)}</td>
-                                    <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleCreate} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{isLoading ? '...' : t('save', lang)}</button><button onClick={() => { setShowAddRow(false); setFormData(EMPTY_FORM); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
+                                    <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setConfirm({ open: true, action: 'create' })} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{t('save', lang)}</button><button onClick={() => { setShowAddRow(false); setFormData(EMPTY_FORM); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
                                 </tr>
                             )}
                             {!hasApplied ? (
@@ -355,7 +363,7 @@ export default function AdminSupervisors() {
                                         <td className="px-4 py-3 text-center text-xs text-[#94a3b8]">{s.divisionname}</td>
                                         <td className="px-4 py-3 text-center text-xs text-[#94a3b8]">{s.curriculumname}</td>
                                         <td className="px-4 py-3 text-center text-xs text-[#94a3b8]">{s.stageName}</td>
-                                        <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleUpdate} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{t('save', lang)}</button><button onClick={() => { setSelectedSup(null); setIsEditOpen(false); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
+                                        <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setConfirm({ open: true, action: 'update' })} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{t('save', lang)}</button><button onClick={() => { setSelectedSup(null); setIsEditOpen(false); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
                                     </tr>
                                 ) : (
                                     <tr key={s.employeeid} className="hover:bg-[#f8fafc] transition-colors">
@@ -374,13 +382,40 @@ export default function AdminSupervisors() {
                                 )
                             ))}
                         </tbody>
-                            </div>
-        <div className="p-4 bg-slate-50/50 border-t border-[#e2e8f0] flex items-center">
-          <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider mr-3">{t('total', lang)}</span>
-          <div className="px-3 py-1 bg-white rounded-lg border border-[#e2e8f0] text-xs font-black text-[#0f172a] shadow-sm">{{filtered}}.length} {t('rows', lang)}</div>
-        </div>
-      </div>
+                    </table>
+                </div>
+                <div className="p-4 bg-slate-50/50 border-t border-[#e2e8f0] flex items-center">
+                    <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider mr-3">{t('total', lang)}</span>
+                    <div className="px-3 py-1 bg-white rounded-lg border border-[#e2e8f0] text-xs font-black text-[#0f172a] shadow-sm">{filtered.length} {t('rows', lang)}</div>
+                </div>
+            </div>
 
+
+            {/* CSV Upload Confirm Modal */}
+            <AnimatePresence>
+                {csvConfirmModal.show && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                        <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
+                            <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
+                                <Upload className="h-6 w-6 text-blue-500" />
+                            </div>
+                            <h3 className="text-lg font-bold text-[#0f172a] mb-2">{isAr ? 'تأكيد الرفع' : 'Confirm Upload'}</h3>
+                            <p className="text-sm text-[#64748b] mb-6 leading-relaxed">
+                                {isAr
+                                    ? `هل أنت متأكد من رفع ${csvConfirmModal.rows.length} مشرف من ملف "${csvConfirmModal.fileName}"؟`
+                                    : `Upload ${csvConfirmModal.rows.length} supervisor(s) from "${csvConfirmModal.fileName}"?`}
+                            </p>
+                            <div className="flex gap-3">
+                                <button onClick={() => setCsvConfirmModal({ show: false, rows: [], fileName: '' })} className="flex-1 py-2.5 rounded-xl border border-[#e2e8f0] text-sm font-semibold text-[#64748b] hover:bg-slate-50">{t('cancel', lang)}</button>
+                                <button onClick={confirmCsvUpload} disabled={isLoading} className="flex-1 py-2.5 rounded-xl bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-sm font-bold flex items-center justify-center gap-2">
+                                    {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    {isAr ? 'رفع' : 'Upload'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <AnimatePresence>
                 {isDeleteModalOpen && (
@@ -396,6 +431,24 @@ export default function AdminSupervisors() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                open={confirm.open}
+                title={confirm.action === 'create' ? (isAr ? 'تأكيد الإضافة' : 'Confirm Create') : (isAr ? 'تأكيد الحفظ' : 'Confirm Save')}
+                message={confirm.action === 'create'
+                    ? (isAr ? 'هل تريد إضافة هذا المشرف؟' : 'Add this supervisor to the system?')
+                    : (isAr ? 'هل تريد حفظ التغييرات على هذا المشرف؟' : 'Save changes to this supervisor?')}
+                confirmLabel={confirm.action === 'create' ? (isAr ? 'إضافة' : 'Create') : (isAr ? 'حفظ' : 'Save')}
+                variant="primary"
+                loading={isLoading}
+                onCancel={() => setConfirm({ open: false, action: null })}
+                onConfirm={() => {
+                    const action = confirm.action;
+                    setConfirm({ open: false, action: null });
+                    if (action === 'create') handleCreate();
+                    else if (action === 'update') handleUpdate();
+                }}
+            />
         </div>
     );
 }

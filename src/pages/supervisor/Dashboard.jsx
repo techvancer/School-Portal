@@ -263,8 +263,8 @@ export default function SupervisorDashboard() {
                             {classPerfData.length === 0 ? (
                                 <div className="h-[280px] flex items-center justify-center text-[#94a3b8] text-sm">{t('noClassData', lang)}</div>
                             ) : (
-                                <div style={{ height: 280 }}>
-                                    <ResponsiveContainer width="100%" height="100%">
+                                <div style={{ height: 280, minWidth: 0, width: '100%' }}>
+                                    <ResponsiveContainer width="100%" height={280}>
                                         <BarChart data={classPerfData} margin={{ top: 16, right: 20, left: 0, bottom: 40 }} barCategoryGap="5%" barSize={28}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                             <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} tickLine={false} axisLine={false} angle={-20} textAnchor="end" height={50} interval={0} />
@@ -295,8 +295,8 @@ export default function SupervisorDashboard() {
                                 </div>
                             ) : (
                                 <>
-                                    <div style={{ height: 220 }}>
-                                        <ResponsiveContainer width="100%" height="100%">
+                                    <div style={{ height: 220, minWidth: 0, width: '100%' }}>
+                                        <ResponsiveContainer width="100%" height={220}>
                                             <PieChart>
                                                 <Pie
                                                     data={gradeData} cx="50%" cy="50%"

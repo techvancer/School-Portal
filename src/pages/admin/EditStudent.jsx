@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Loader2, ArrowLeft, Save } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { rest, update, dbQuery } from '../../lib/supabaseClient';
@@ -12,6 +13,10 @@ const sanitizePhone = (value = '') => String(value).replace(/\D/g, '').slice(0, 
 const isTenDigitPhone = (value = '') => /^\d{10}$/.test(String(value || '').trim());
 const toEn = (v) => v.replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '');
 const toAr = (v) => v.replace(/[a-zA-Z]/g, '');
+
+// Build parent name by joining father + grandfather + surname
+const buildParentName = (father, grandfather, surname) =>
+    [father, grandfather, surname].map(s => (s || '').trim()).filter(Boolean).join(' ');
 
 export default function AdminEditStudent() {
   const { lang } = useLang();
@@ -23,6 +28,7 @@ export default function AdminEditStudent() {
 
   const [form, setForm] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [confirm, setConfirm] = useState({ open: false });
   const [loadingData, setLoadingData] = useState(true);
 
   const [classes, setClasses]           = useState([]);
@@ -67,19 +73,30 @@ export default function AdminEditStudent() {
           return;
         }
 
+        // Auto-derive parent names from student name components
+        const fatherEn      = stu.studentfathersname_en      || '';
+        const grandfatherEn = stu.studentgrandfathersname_en || '';
+        const surnameEn     = stu.studentsurname_en          || '';
+        const fatherAr      = stu.studentfathersname_ar      || '';
+        const grandfatherAr = stu.studentgrandfathersname_ar || '';
+        const surnameAr     = stu.studentsurname_ar          || '';
+
+        const derivedParentEn = buildParentName(fatherEn, grandfatherEn, surnameEn);
+        const derivedParentAr = buildParentName(fatherAr, grandfatherAr, surnameAr);
+
         setForm({
           studentfirstname_ar:        stu.studentfirstname_ar        || '',
           studentfirstname_en:        stu.studentfirstname_en        || '',
-          studentfathersname_ar:      stu.studentfathersname_ar      || '',
-          studentfathersname_en:      stu.studentfathersname_en      || '',
-          studentgrandfathersname_ar: stu.studentgrandfathersname_ar || '',
-          studentgrandfathersname_en: stu.studentgrandfathersname_en || '',
-          studentsurname_ar:          stu.studentsurname_ar          || '',
-          studentsurname_en:          stu.studentsurname_en          || '',
+          studentfathersname_ar:      fatherAr,
+          studentfathersname_en:      fatherEn,
+          studentgrandfathersname_ar: grandfatherAr,
+          studentgrandfathersname_en: grandfatherEn,
+          studentsurname_ar:          surnameAr,
+          studentsurname_en:          surnameEn,
           studentemail:               stu.studentemail               || '',
           studentmobile:              stu.studentmobile              || '',
-          parentname_ar:              stu.parentname_ar || stu.parentname || '',
-          parentname_en:              stu.parentname_en || stu.parentname || '',
+          parentname_ar:              derivedParentAr || stu.parentname_ar || stu.parentname || '',
+          parentname_en:              derivedParentEn || stu.parentname_en || stu.parentname || '',
           parentemail:                stu.parentemail                || '',
           parentmobile:               stu.parentmobile               || '',
           parent_position:            stu.parent_position            || '',
@@ -100,6 +117,10 @@ export default function AdminEditStudent() {
 
   const handleSave = async () => {
     if (!form) return;
+    if (!form.classid || !form.sectionid || !form.stageid) {
+      addToast(lang === 'ar' ? 'الرجاء اختيار الصف والشعبة والمرحلة.' : 'Class, Section, and Stage are required.', 'warning');
+      return;
+    }
     if ((form.studentmobile && !isTenDigitPhone(form.studentmobile)) || (form.parentmobile && !isTenDigitPhone(form.parentmobile))) {
       addToast('Phone numbers must be exactly 10 digits.', 'warning');
       return;
@@ -127,8 +148,8 @@ export default function AdminEditStudent() {
           classid:      parseInt(form.classid,                     10),
           sectionid:    parseInt(form.sectionid,                   10),
           stageid:      parseInt(form.stageid,                     10),
-          divisionid:   parseInt(form.divisionid  || user.divisionid  || 1, 10),
-          curriculumid: parseInt(form.curriculumid || user.curriculumid || 1, 10),
+          divisionid:   parseInt(form.divisionid  || user.divisionid  || 1, 10) || 1,
+          curriculumid: parseInt(form.curriculumid || user.curriculumid || 1, 10) || 1,
         });
       addToast(t('updateSuccess', lang), 'success');
       navigate('/admin/students');
@@ -177,16 +198,16 @@ export default function AdminEditStudent() {
           {/* English row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div><label className={lbl}>{t('firstNameEn', lang)} *</label><input className={inp} placeholder="First name" value={form.studentfirstname_en} onChange={e => set('studentfirstname_en', toEn(e.target.value))} /></div>
-            <div><label className={lbl}>{t('fatherNameEn', lang)}</label><input className={inp} placeholder="Father's name" value={form.studentfathersname_en} onChange={e => set('studentfathersname_en', toEn(e.target.value))} /></div>
-            <div><label className={lbl}>{t('grandfatherNameEn', lang)}</label><input className={inp} placeholder="Grandfather's name" value={form.studentgrandfathersname_en} onChange={e => set('studentgrandfathersname_en', toEn(e.target.value))} /></div>
-            <div><label className={lbl}>{t('surnameEn', lang)}</label><input className={inp} placeholder="Surname" value={form.studentsurname_en} onChange={e => set('studentsurname_en', toEn(e.target.value))} /></div>
+            <div><label className={lbl}>{t('fatherNameEn', lang)}</label><input className={inp} placeholder="Father's name" value={form.studentfathersname_en} onChange={e => { const v = toEn(e.target.value); setForm(p => ({ ...p, studentfathersname_en: v, parentname_en: buildParentName(v, p.studentgrandfathersname_en, p.studentsurname_en) })); }} /></div>
+            <div><label className={lbl}>{t('grandfatherNameEn', lang)}</label><input className={inp} placeholder="Grandfather's name" value={form.studentgrandfathersname_en} onChange={e => { const v = toEn(e.target.value); setForm(p => ({ ...p, studentgrandfathersname_en: v, parentname_en: buildParentName(p.studentfathersname_en, v, p.studentsurname_en) })); }} /></div>
+            <div><label className={lbl}>{t('surnameEn', lang)}</label><input className={inp} placeholder="Surname" value={form.studentsurname_en} onChange={e => { const v = toEn(e.target.value); setForm(p => ({ ...p, studentsurname_en: v, parentname_en: buildParentName(p.studentfathersname_en, p.studentgrandfathersname_en, v) })); }} /></div>
           </div>
           {/* Arabic row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
             <div><label className={lbl}>{t('firstNameAr', lang)}</label><input className={inp} dir="rtl" placeholder="الاسم الأول" value={form.studentfirstname_ar} onChange={e => set('studentfirstname_ar', toAr(e.target.value))} /></div>
-            <div><label className={lbl}>{t('fatherNameAr', lang)}</label><input className={inp} dir="rtl" placeholder="اسم الأب" value={form.studentfathersname_ar} onChange={e => set('studentfathersname_ar', toAr(e.target.value))} /></div>
-            <div><label className={lbl}>{t('grandfatherNameAr', lang)}</label><input className={inp} dir="rtl" placeholder="اسم الجد" value={form.studentgrandfathersname_ar} onChange={e => set('studentgrandfathersname_ar', toAr(e.target.value))} /></div>
-            <div><label className={lbl}>{t('surnameAr', lang)}</label><input className={inp} dir="rtl" placeholder="اسم العائلة" value={form.studentsurname_ar} onChange={e => set('studentsurname_ar', toAr(e.target.value))} /></div>
+            <div><label className={lbl}>{t('fatherNameAr', lang)}</label><input className={inp} dir="rtl" placeholder="اسم الأب" value={form.studentfathersname_ar} onChange={e => { const v = toAr(e.target.value); setForm(p => ({ ...p, studentfathersname_ar: v, parentname_ar: buildParentName(v, p.studentgrandfathersname_ar, p.studentsurname_ar) })); }} /></div>
+            <div><label className={lbl}>{t('grandfatherNameAr', lang)}</label><input className={inp} dir="rtl" placeholder="اسم الجد" value={form.studentgrandfathersname_ar} onChange={e => { const v = toAr(e.target.value); setForm(p => ({ ...p, studentgrandfathersname_ar: v, parentname_ar: buildParentName(p.studentfathersname_ar, v, p.studentsurname_ar) })); }} /></div>
+            <div><label className={lbl}>{t('surnameAr', lang)}</label><input className={inp} dir="rtl" placeholder="اسم العائلة" value={form.studentsurname_ar} onChange={e => { const v = toAr(e.target.value); setForm(p => ({ ...p, studentsurname_ar: v, parentname_ar: buildParentName(p.studentfathersname_ar, p.studentgrandfathersname_ar, v) })); }} /></div>
           </div>
         </div>
 
@@ -275,12 +296,23 @@ export default function AdminEditStudent() {
           className="px-6 py-2.5 font-bold text-[#64748b] border border-[#e2e8f0] rounded-xl hover:bg-slate-50 transition-colors">
           {t('cancel', lang)}
         </button>
-        <button onClick={handleSave} disabled={isLoading}
+        <button onClick={() => setConfirm({ open: true })} disabled={isLoading}
           className="btn-primary h-11 px-8 flex items-center gap-2 disabled:opacity-60">
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {t('saveChanges', lang)}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={t('saveChanges', lang)}
+        message={lang === 'ar' ? 'هل تريد حفظ التغييرات على بيانات هذا الطالب؟' : 'Save changes to this student\'s information?'}
+        confirmLabel={lang === 'ar' ? 'حفظ' : 'Save'}
+        variant="primary"
+        loading={isLoading}
+        onCancel={() => setConfirm({ open: false })}
+        onConfirm={() => { setConfirm({ open: false }); handleSave(); }}
+      />
     </div>
   );
 }

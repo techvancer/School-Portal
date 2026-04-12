@@ -42,7 +42,7 @@ export default function SupervisorExams() {
                 ? `stageid=eq.${filters.stageid}`
                 : stageIds.length ? `stageid=in.(${stageIds.join(',')})` : '';
 
-            const classStages = await dbQuery(`classes_stages_tbl?select=classid,stageid${stageFilter ? '&' + stageFilter : ''}`);
+            const classStages = await dbQuery(`classes_stages_tbl?select=classid,stageid&schoolid=eq.${sid}&branchid=eq.${bid}${stageFilter ? '&' + stageFilter : ''}`);
             let supervisedClassIds = [...new Set((classStages || []).map(r => String(r.classid)))];
             if (filters.classid && filters.classid !== 'All') {
                 supervisedClassIds = supervisedClassIds.filter(id => id === String(filters.classid));
@@ -56,28 +56,25 @@ export default function SupervisorExams() {
                 ...(filters.sectionid    && filters.sectionid    !== 'All' ? { sectionid:    `eq.${filters.sectionid}` }    : {}),
                 ...(filters.subjectid    && filters.subjectid    !== 'All' ? { subjectid:    `eq.${filters.subjectid}` }    : {}),
                 ...(filters.examid       && filters.examid       !== 'All' ? { examid:       `eq.${filters.examid}` }       : {}),
-                ...(filters.semisterid   && filters.semisterid   !== 'All' ? { semisterid:   `eq.${filters.semisterid}` }   : {}),
-                ...(filters.curriculumid && filters.curriculumid !== 'All' ? { curriculumid: `eq.${filters.curriculumid}` } : {}),
-                ...(filters.divisionid   && filters.divisionid   !== 'All' ? { divisionid:   `eq.${filters.divisionid}` }   : {}),
                 ...(filters.employeeid   && filters.employeeid   !== 'All' ? { employeeid:   `eq.${filters.employeeid}` }   : {}),
             };
 
             // Build exam query string from examParams
             const examQs = Object.entries(examParams).filter(([k]) => k !== 'select').map(([k, v]) => `${k}=${v}`).join('&');
             const [examRows, examTypes, classRows, sectionRows, subjectRows, empList, answerRows, questionRows] = await Promise.all([
-                dbQuery(`students_exams_employees_section_subjects_classes_semisters_cur?${examQs}&select=*`),
+                dbQuery(`questions_exams_employee_subjects_sections_tbl?${examQs}&select=*`),
                 dbQuery('exams_tbl?select=*'),
                 dbQuery('classes_tbl?select=*'),
                 dbQuery('sections_tbl?select=*'),
                 dbQuery('subjects_tbl?select=*'),
                 dbQuery(`employee_tbl?schoolid=eq.${sid}&branchid=eq.${bid}&select=*`),
-                dbQuery(`studentanswers_tbl?schoolid=eq.${sid}&branchid=eq.${bid}&classid=in.(${supervisedClassIds.join(',')})&select=examid,classid,sectionid,subjectid,employeeid,studentid,studentmark,questionid`),
-                dbQuery(`questions_exams_employee_subjects_sections_tbl?schoolid=eq.${sid}&branchid=eq.${bid}&classid=in.(${supervisedClassIds.join(',')})&select=examid,classid,sectionid,subjectid,employeeid,questionid,question_marks`),
+                dbQuery(`studentanswers_tbl?schoolid=eq.${sid}&branchid=eq.${bid}&classid=in.(${supervisedClassIds.join(',')})&select=examid,classid,sectionid,subjectid,employeeid,studentid,studentmark,questionid,attempt_number`),
+                dbQuery(`questions_exams_employee_subjects_sections_tbl?schoolid=eq.${sid}&branchid=eq.${bid}&classid=in.(${supervisedClassIds.join(',')})&select=examid,classid,sectionid,subjectid,employeeid,questionid,question_marks,attempt_number,status`),
             ]);
 
             const dedupe = new Map();
             (examRows || []).forEach(r => {
-                const key = `${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}-${r.employeeid}`;
+                const key = `${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}-${r.employeeid}-${r.attempt_number || 1}`;
                 if (!dedupe.has(key)) dedupe.set(key, r);
             });
 
@@ -92,7 +89,8 @@ export default function SupervisorExams() {
                     String(a.classid) === String(r.classid) &&
                     String(a.sectionid) === String(r.sectionid) &&
                     String(a.subjectid) === String(r.subjectid) &&
-                    String(a.employeeid) === String(r.employeeid)
+                    String(a.employeeid) === String(r.employeeid) &&
+                    String(a.attempt_number || 1) === String(r.attempt_number || 1)
                 );
                 // Total possible marks for this exam-class-section-subject-employee combo
                 const qRows = (questionRows || []).filter(q =>
@@ -100,7 +98,8 @@ export default function SupervisorExams() {
                     String(q.classid)    === String(r.classid)    &&
                     String(q.sectionid)  === String(r.sectionid)  &&
                     String(q.subjectid)  === String(r.subjectid)  &&
-                    String(q.employeeid) === String(r.employeeid)
+                    String(q.employeeid) === String(r.employeeid) &&
+                    String(q.attempt_number || 1) === String(r.attempt_number || 1)
                 );
                 const totalMax = qRows.reduce((sum, q) => sum + (parseFloat(q.question_marks) || 0), 0);
 
@@ -117,11 +116,13 @@ export default function SupervisorExams() {
                 const avgMarks = studentPcts.length ? parseFloat((studentPcts.reduce((a, b) => a + b, 0) / studentPcts.length).toFixed(1)) : null;
                 const passedCount = studentPcts.filter(pct => pct >= 50).length;
                 
-                // Determine exam status based on student answers
+                // Determine exam status based on active question row status
+                const qStatuses = [...new Set(qRows.map(q => String(q.status || '').toLowerCase() || 'new'))];
                 let examStatus = 'New';
-                if (tookCount > 0) {
-                    examStatus = 'Marked';
-                }
+                if (qStatuses.includes('cancelled')) examStatus = 'Cancelled';
+                else if (qStatuses.includes('marked') || qStatuses.includes('completed')) examStatus = 'Marked';
+                else if (qStatuses.includes('submitted')) examStatus = 'Submitted';
+                else if (tookCount > 0) examStatus = 'Marked';
                 
                 return {
                     ...r,
@@ -133,7 +134,7 @@ export default function SupervisorExams() {
                     avgMarks,
                     passedCount,
                     tookCount,
-                    examStatus,
+                    examStatus: examStatus,
                 };
             });
             setExams(merged);

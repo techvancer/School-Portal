@@ -6,7 +6,7 @@ import { t } from '../lib/langHelper';
 import {
     LayoutDashboard, UserCog, Users, BookOpen,
     ClipboardList, CalendarCheck, CalendarDays, LogOut,
-    PlayCircle, Shield, Layers, BarChart, GraduationCap, Link, X, School
+    PlayCircle, Shield, Layers, BarChart, GraduationCap, Link, X, School, Briefcase
 } from 'lucide-react';
 
 const getNavItems = (role, lang) => {
@@ -17,9 +17,9 @@ const getNavItems = (role, lang) => {
     if (role === 'Admin') {
         return [
             ...base,
-            { icon: Users,         label: t('employees', lang),   path: '/admin/employees' },
-            { icon: GraduationCap, label: t('students', lang),    path: '/admin/students' },
-            { icon: BookOpen,      label: t('classes', lang),     path: '/admin/classes' },
+            { icon: Briefcase,     label: t('employees', lang),   path: '/admin/employees' },
+            { icon: Users,         label: t('students', lang),    path: '/admin/students' },
+            { icon: School,        label: t('classes', lang),     path: '/admin/classes' },
             { icon: Layers,        label: t('subjects', lang),    path: '/admin/subjects' },
             { icon: Link,          label: t('assignments', lang), path: '/admin/assignments' },
             { icon: CalendarCheck, label: t('attendance', lang),  path: '/admin/attendance' },
@@ -32,7 +32,7 @@ const getNavItems = (role, lang) => {
         return [
             ...base,
             { icon: Users,         label: t('teachers', lang),   path: '/supervisor/teachers' },
-            { icon: GraduationCap, label: t('students', lang),   path: '/supervisor/students' },
+            { icon: Users,         label: t('students', lang),   path: '/supervisor/students' },
             { icon: CalendarCheck, label: t('attendance', lang), path: '/supervisor/attendance' },
             { icon: ClipboardList, label: t('exams', lang),      path: '/supervisor/exams' },
             { icon: BarChart,      label: t('reports', lang),    path: '/supervisor/reports' },

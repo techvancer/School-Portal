@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Plus, Trash2, Edit2, Loader2, Upload, Download } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
 import FilterBar from '../../components/FilterBar';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { rest, insert, update, remove, nextId, dbQuery } from '../../lib/supabaseClient';
@@ -39,6 +40,7 @@ export default function AdminSubjects() {
   const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch();
   const [isLoading, setIsLoading] = useState(false);
   const [csvConfirmModal, setCsvConfirmModal] = useState({ show: false, rows: [], fileName: '' });
+  const [confirm, setConfirm] = useState({ open: false, action: null, subject: null });
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -342,7 +344,7 @@ export default function AdminSubjects() {
                   </td>
                   <td className="py-3 px-6 text-center">
                     <div className="flex justify-center items-center gap-2">
-                      <button onClick={handleCreate} disabled={!newRow.Subjectname_en.trim() || !newRow.subjectname.trim() || isLoading} className="px-3 py-1.5 text-xs font-bold text-white bg-[#1d4ed8] rounded-lg disabled:opacity-60 disabled:cursor-not-allowed">{t('save', lang)}</button>
+                      <button onClick={() => setConfirm({ open: true, action: 'create', subject: null })} disabled={!newRow.Subjectname_en.trim() || !newRow.subjectname.trim() || isLoading} className="px-3 py-1.5 text-xs font-bold text-white bg-[#1d4ed8] rounded-lg disabled:opacity-60 disabled:cursor-not-allowed">{t('save', lang)}</button>
                       <button onClick={() => { setShowAddRow(false); setNewRow({ Subjectname_en: '', subjectname: '' }); }} className="px-3 py-1.5 text-xs font-bold text-[#64748b] bg-slate-100 rounded-lg">{t('cancel', lang)}</button>
                     </div>
                   </td>
@@ -361,7 +363,7 @@ export default function AdminSubjects() {
                         <div><label className="text-xs font-bold text-[#64748b] mb-1 block">اسم المادة (عربي) <span className="text-red-500">*</span></label><input className="input-field h-10 w-full" dir="rtl" value={form.subjectname} onChange={(e) => setForm((p) => ({ ...p, subjectname: toAr(e.target.value) }))} /></div>
                       </div>
                     </td>
-                    <td className="py-3 px-6 text-center"><div className="flex justify-center gap-2"><button onClick={handleUpdate} className="px-3 py-1.5 text-xs font-bold text-white bg-[#1d4ed8] rounded-lg">{t('save', lang)}</button><button onClick={() => setSelected(null)} className="px-3 py-1.5 text-xs font-bold text-[#64748b] bg-slate-100 rounded-lg">{t('cancel', lang)}</button></div></td>
+                    <td className="py-3 px-6 text-center"><div className="flex justify-center gap-2"><button onClick={() => setConfirm({ open: true, action: 'update', subject: null })} className="px-3 py-1.5 text-xs font-bold text-white bg-[#1d4ed8] rounded-lg">{t('save', lang)}</button><button onClick={() => setSelected(null)} className="px-3 py-1.5 text-xs font-bold text-[#64748b] bg-slate-100 rounded-lg">{t('cancel', lang)}</button></div></td>
                   </tr>
                 ) : (
                   <tr key={subject.subjectid} className="hover:bg-slate-50 transition-colors">
@@ -371,7 +373,7 @@ export default function AdminSubjects() {
                         <span className="text-xs text-[#64748b]" dir="rtl">{subject.subjectname || '—'}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => openEdit(subject)} className="p-1.5 text-[#1d4ed8] hover:bg-blue-50 rounded-lg"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(subject)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="py-4 px-6 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => openEdit(subject)} className="p-1.5 text-[#1d4ed8] hover:bg-blue-50 rounded-lg"><Edit2 className="h-4 w-4" /></button><button onClick={() => setConfirm({ open: true, action: 'delete', subject })} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 )
               ))}
@@ -402,6 +404,27 @@ export default function AdminSubjects() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.action === 'delete' ? (isAr ? 'تأكيد الحذف' : 'Delete Subject') : confirm.action === 'create' ? (isAr ? 'تأكيد الإضافة' : 'Add Subject') : (isAr ? 'تأكيد الحفظ' : 'Save Changes')}
+        message={confirm.action === 'delete'
+          ? (isAr ? `هل أنت متأكد من حذف المادة "${confirm.subject?.Subjectname_en}"؟` : `Delete subject "${confirm.subject?.Subjectname_en}"? This cannot be undone.`)
+          : confirm.action === 'create'
+          ? (isAr ? 'هل تريد إضافة هذه المادة؟' : 'Add this subject to the curriculum?')
+          : (isAr ? 'هل تريد حفظ التغييرات على هذه المادة؟' : 'Save changes to this subject?')}
+        confirmLabel={confirm.action === 'delete' ? (isAr ? 'حذف' : 'Delete') : confirm.action === 'create' ? (isAr ? 'إضافة' : 'Add') : (isAr ? 'حفظ' : 'Save')}
+        variant={confirm.action === 'delete' ? 'danger' : 'primary'}
+        loading={isLoading}
+        onCancel={() => setConfirm({ open: false, action: null, subject: null })}
+        onConfirm={() => {
+          const { action, subject } = confirm;
+          setConfirm({ open: false, action: null, subject: null });
+          if (action === 'create') handleCreate();
+          else if (action === 'update') handleUpdate();
+          else if (action === 'delete') handleDelete(subject);
+        }}
+      />
     </div>
   );
 }

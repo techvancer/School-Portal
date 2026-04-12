@@ -44,19 +44,25 @@ export default function AdminExams() {
                 branchid: `eq.${user.branchid}`,
                 select: '*',
                 ...f('classid'), ...f('sectionid'), ...f('subjectid'), ...f('examid'),
-                ...f('curriculumid'), ...f('divisionid'), ...f('stageid'),
                 ...(filters.employeeid && filters.employeeid !== 'All' ? { employeeid: `eq.${filters.employeeid}` } : {}),
             };
-            const [stuExams, examList, clTbl, secRows, subList, empList, qExamRows, answersData] = await Promise.all([
-                rest('students_exams_employees_section_subjects_classes_semisters_cur', examQueryParams),
+            const [stuExams, examList, clTbl, secRows, subList, empList, enrollmentData, answersData] = await Promise.all([
+                rest('questions_exams_employee_subjects_sections_tbl', examQueryParams),
                 rest('exams_tbl', { select: '*' }),
                 rest('classes_tbl', { select: '*' }),
                 rest('sections_tbl', { select: '*' }),
                 rest('subjects_tbl', { select: '*' }),
                 rest('employee_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
-                rest('questions_exams_employee_subjects_sections_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid,employeeid,questionid,status' }).catch(() => []),
+                rest('students_sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'studentid,classid,sectionid' }).catch(() => []),
                 rest('studentanswers_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid' }).catch(() => []),
             ]);
+
+            // Build class enrollment map
+            const enrollMap = {};
+            (enrollmentData || []).forEach(e => {
+                const k = `${e.classid}-${e.sectionid}`;
+                enrollMap[k] = (enrollMap[k] || 0) + 1;
+            });
 
             // Build status map from student answers: if exam has answers → 'marked', else 'new'
             const answersMap = {};
@@ -65,10 +71,10 @@ export default function AdminExams() {
                 answersMap[k] = true;
             });
 
-            // Deduplicate: one row per examid+classid+sectionid+subjectid+employeeid
+            // Deduplicate: one row per examid+classid+sectionid+subjectid+employeeid+attempt_number
             const seen = new Map();
             stuExams.forEach(r => {
-                const key = `${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}-${r.employeeid}`;
+                const key = `${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}-${r.employeeid}-${r.attempt_number || 1}`;
                 if (!seen.has(key)) {
                     const exam = examList.find(e => e.examid === r.examid);
                     const cl = clTbl.find(c => c.classid === r.classid);
@@ -77,14 +83,8 @@ export default function AdminExams() {
                     const emp = empList.find(e => e.employeeid === r.employeeid);
 
                     const dbStatus = String(exam?.status || '').toLowerCase();
-                    const qExamRow = (qExamRows || []).find(q =>
-                        String(q.examid) === String(r.examid) &&
-                        String(q.classid) === String(r.classid) &&
-                        String(q.sectionid) === String(r.sectionid) &&
-                        String(q.subjectid) === String(r.subjectid) &&
-                        String(q.employeeid) === String(r.employeeid)
-                    );
-                    const qStatus = String(qExamRow?.status || '').toLowerCase();
+                    const qStatus = String(r.status || '').toLowerCase();
+                    
                     let examStatus;
                     if (qStatus === 'cancelled' || dbStatus === 'cancelled') examStatus = 'cancelled';
                     else if (qStatus === 'submitted' || dbStatus === 'submitted') examStatus = 'submitted';
@@ -98,6 +98,7 @@ export default function AdminExams() {
                         sectionid: r.sectionid,
                         subjectid: r.subjectid,
                         employeeid: r.employeeid,
+                        attempt_number: r.attempt_number || 1,
                         examName: lang === 'ar' ? (exam?.examname || exam?.examname_en || '—') : (exam?.examname_en || exam?.examname || '—'),
                         examNameAr: exam?.examname || '',
                         examNameEn: exam?.examname_en || '',
@@ -108,7 +109,7 @@ export default function AdminExams() {
                         subjectNameEn: sub?.Subjectname_en || '',
                         teacherName: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename || '—',
                         teacherEmail: emp?.employeeemail || '',
-                        studentCount: 0,
+                        studentCount: enrollMap[`${r.classid}-${r.sectionid}`] || 0,
                         examStatus: examStatus,
                         totalmarks: exam?.totalmarks ?? exam?.total_marks ?? null,
                         duration: exam?.duration ?? null,
@@ -118,7 +119,6 @@ export default function AdminExams() {
                         created_at: exam?.created_at ?? null,
                     });
                 }
-                seen.get(key).studentCount++;
             });
 
             const enriched = [...seen.values()];
@@ -164,9 +164,9 @@ export default function AdminExams() {
         if (!row) return;
         try {
             await dbQuery(
-                `students_exams_employees_section_subjects_classes_semisters_cur` +
+                `questions_exams_employee_subjects_sections_tbl` +
                 `?examid=eq.${row.examid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}` +
-                `&subjectid=eq.${row.subjectid}&employeeid=eq.${row.employeeid}`,
+                `&subjectid=eq.${row.subjectid}&employeeid=eq.${row.employeeid}&attempt_number=eq.${row.attempt_number}`,
                 'DELETE'
             );
             addToast(t('examEntryDeleted', lang), 'success');

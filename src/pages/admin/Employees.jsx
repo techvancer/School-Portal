@@ -6,6 +6,7 @@ import { useLocation } from 'react-router-dom';
 import { Search, Plus, Edit2, Trash2, Loader2, Upload, Download, X } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
 import FilterBar from '../../components/FilterBar';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { rest, update, remove, dbQuery, EDGE_FUNCTION_URL } from '../../lib/supabaseClient';
@@ -52,6 +53,7 @@ export default function AdminEmployees() {
   const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch(); // { employeeid, field, value }
   const [csvErrorModal, setCsvErrorModal] = useState({ show: false, errors: [] });
   const [csvConfirmModal, setCsvConfirmModal] = useState({ show: false, rows: [], fileName: '' });
+  const [confirm, setConfirm] = useState({ open: false, action: null });
 
   useEffect(() => {
     const handler = () => { fetchData(); };
@@ -498,13 +500,19 @@ export default function AdminEmployees() {
     }
   };
 
-  const saveCellEdit = async () => {
+  const saveCellEdit = () => {
     if (!editingCell) return;
-    const { employeeid, field, value } = editingCell;
+    const { field, value } = editingCell;
     if (field === 'employeemobile' && value && !isTenDigitPhone(value)) {
       addToast('Mobile number must be exactly 10 digits.', 'warning');
       return;
     }
+    setConfirm({ open: true, action: 'cell' });
+  };
+
+  const executeCellSave = async () => {
+    if (!editingCell) return;
+    const { employeeid, field, value } = editingCell;
     setEditingCell(null);
     try {
       await dbQuery(`employee_tbl?employeeid=eq.${employeeid}`, 'PATCH', { [field]: value || null });
@@ -643,7 +651,7 @@ export default function AdminEmployees() {
                   </td>
                   <td className="px-4 py-3 text-center text-xs text-[#94a3b8] italic">{t('fromAssignments', lang)}</td>
                   <td className="px-4 py-3 text-center text-xs text-[#94a3b8] italic">{t('fromAssignments', lang)}</td>
-                  <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleCreate} disabled={!isEmployeeFormValid || isLoading} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed">{t('save', lang)}</button><button onClick={() => { setShowAddRow(false); setFormData(EMPTY_FORM); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
+                  <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setConfirm({ open: true, action: 'create' })} disabled={!isEmployeeFormValid || isLoading} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed">{t('save', lang)}</button><button onClick={() => { setShowAddRow(false); setFormData(EMPTY_FORM); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
                 </tr>
               )}
 
@@ -683,7 +691,7 @@ export default function AdminEmployees() {
                       <label className="text-[11px] font-bold text-[#64748b] mb-1 block">{t('curriculum', lang)}</label>
                       <select className="input-field h-9 min-w-[140px]" value={editData.curriculumid} onChange={(e) => setEditData((p) => ({ ...p, curriculumid: e.target.value }))}><option value="">—</option>{curriculums.map((curriculum) => <option key={curriculum.curriculumid} value={curriculum.curriculumid}>{getField(curriculum, 'curriculumname', 'curriculumname_en', lang) || curriculum.curriculumname}</option>)}</select>
                     </td>
-                    <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={handleUpdate} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{isAr ? "حفظ" : "Save"}</button><button onClick={() => setSelectedEmp(null)} className="px-3 py-2 rounded-lg border text-xs font-bold">{isAr ? "إلغاء" : "Cancel"}</button></div></td>
+                    <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setConfirm({ open: true, action: 'update' })} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{isAr ? "حفظ" : "Save"}</button><button onClick={() => setSelectedEmp(null)} className="px-3 py-2 rounded-lg border text-xs font-bold">{isAr ? "إلغاء" : "Cancel"}</button></div></td>
                   </tr>
                 ) : (
                   <tr key={employee.employeeid} className="hover:bg-[#f8fafc] transition-colors">
@@ -794,6 +802,27 @@ export default function AdminEmployees() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.action === 'create' ? (isAr ? 'تأكيد الإضافة' : 'Confirm Create') : confirm.action === 'update' ? (isAr ? 'تأكيد الحفظ' : 'Confirm Save') : (isAr ? 'تأكيد التعديل' : 'Confirm Edit')}
+        message={confirm.action === 'create'
+          ? (isAr ? 'هل تريد إضافة هذا الموظف؟' : 'Add this employee to the system?')
+          : confirm.action === 'update'
+          ? (isAr ? 'هل تريد حفظ التغييرات على هذا الموظف؟' : 'Save changes to this employee?')
+          : (isAr ? 'هل تريد حفظ هذا التعديل؟' : 'Save this change?')}
+        confirmLabel={confirm.action === 'create' ? (isAr ? 'إضافة' : 'Create') : (isAr ? 'حفظ' : 'Save')}
+        variant="primary"
+        loading={isLoading}
+        onCancel={() => setConfirm({ open: false, action: null })}
+        onConfirm={() => {
+          const action = confirm.action;
+          setConfirm({ open: false, action: null });
+          if (action === 'create') handleCreate();
+          else if (action === 'update') handleUpdate();
+          else if (action === 'cell') executeCellSave();
+        }}
+      />
     </div>
   );
 }

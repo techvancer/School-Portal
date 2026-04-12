@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Edit2, Trash2, X, Loader2, Mail, Hash } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
 import FilterBar from '../../components/FilterBar';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +39,7 @@ export default function AdminTeachers() {
     const [selectedTeacher, setSelectedTeacher] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [formData, setFormData] = useState(EMPTY_FORM);
+    const [confirm, setConfirm] = useState({ open: false, action: null });
     const { sorted: sortedTeachers, sortCol, sortDir, handleSort } = useSortable(teachers, 'employeeid');
     const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch();
 
@@ -246,7 +248,7 @@ export default function AdminTeachers() {
                                         <td className="px-4 py-3 text-center text-xs text-[#94a3b8]">{teacher.subjectName}</td>
                                         <td className="px-4 py-3 text-center text-xs text-[#94a3b8]">{teacher.classname}</td>
                                         <td className="px-4 py-3 text-center text-xs text-[#94a3b8]">{teacher.sectionname}</td>
-                                        <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={e => { e.preventDefault(); handleUpdate(e); }} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{t('save', lang)}</button><button onClick={() => { setSelectedTeacher(null); setIsEditModalOpen(false); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
+                                        <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => setConfirm({ open: true, action: 'update' })} className="px-3 py-2 rounded-lg bg-[#1d4ed8] text-white text-xs font-bold">{t('save', lang)}</button><button onClick={() => { setSelectedTeacher(null); setIsEditModalOpen(false); }} className="px-3 py-2 rounded-lg border text-xs font-bold">{t('cancel', lang)}</button></div></td>
                                     </tr>
                                 ) : (
                                 <tr key={teacher.employeeid} className="hover:bg-[#f8fafc] transition-colors">
@@ -289,7 +291,7 @@ export default function AdminTeachers() {
                     <div className="fixed inset-0 z-[60] flex justify-end">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeModal} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
                         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'tween', duration: 0.25 }} className="relative w-full max-w-lg bg-white shadow-2xl overflow-hidden h-full">
-                            <form onSubmit={handleCreate}>
+                            <form onSubmit={(e) => { e.preventDefault(); setConfirm({ open: true, action: 'create' }); }}>
                                 <div className="p-6 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc]">
                                     <h2 className="text-xl font-bold text-[#0f172a]">{t('createNewTeacher', lang)}</h2>
                                     <button type="button" onClick={closeModal} className="p-2 hover:bg-white rounded-full text-[#64748b]"><X className="h-6 w-6" /></button>
@@ -343,6 +345,20 @@ export default function AdminTeachers() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <ConfirmDialog
+                open={confirm.open}
+                title={confirm.action === 'create' ? (isAr ? 'إضافة معلم جديد؟' : 'Add Teacher?') : (isAr ? 'حفظ التغييرات؟' : 'Save Changes?')}
+                message={confirm.action === 'create'
+                    ? (isAr ? 'سيتم إنشاء حساب معلم جديد.' : 'A new teacher account will be created.')
+                    : (isAr ? 'سيتم تحديث بيانات المعلم.' : 'Teacher profile will be updated.')}
+                confirmLabel={confirm.action === 'create' ? (isAr ? 'إضافة' : 'Add Teacher') : (isAr ? 'حفظ' : 'Save')}
+                cancelLabel={isAr ? 'إلغاء' : 'Cancel'}
+                variant="primary"
+                loading={isLoading}
+                onConfirm={() => { setConfirm({ open: false }); confirm.action === 'create' ? handleCreate({ preventDefault: () => {} }) : handleUpdate(); }}
+                onCancel={() => setConfirm({ open: false })}
+            />
         </div>
     );
 }
