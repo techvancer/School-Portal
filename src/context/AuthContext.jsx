@@ -20,6 +20,7 @@ export function AuthProvider({ children }) {
             // SIGNED_IN with same user: Supabase restores session on tab focus / minimize-restore
             // Both cases: skip re-fetching employee data to prevent full page reload
             if (event === 'TOKEN_REFRESHED') return;
+            if (event === 'TOKEN_REFRESH_FAILED') { await supabase.auth.signOut(); setUser(null); setFirstLogin(false); loadedAuthId.current = null; return; }
             if (!session) { setUser(null); setFirstLogin(false); loadedAuthId.current = null; return; }
             if (loadedAuthId.current === session.user.id) return; // same user already loaded
             await loadEmployee(session.user, session.access_token);
