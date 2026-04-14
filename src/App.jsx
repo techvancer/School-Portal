@@ -7,7 +7,7 @@ import Students from './pages/Students';
 import EditMarks from './pages/EditMarks';
 import Exams from './pages/Exams';
 import CreateExam from './pages/CreateExam';
-import EditExam from './pages/EditExam';
+
 import UploadMarks from './pages/UploadMarks';
 import TeacherExamUpload from './pages/TeacherExamUpload';
 import Videos from './pages/Videos';
@@ -68,7 +68,7 @@ function App() {
                     <Route path="/edit-marks" element={<EditMarks />} />
                     <Route path="/exams" element={<Exams />} />
                     <Route path="/exams/create" element={<CreateExam />} />
-                    <Route path="/exams/edit/:id" element={<EditExam />} />
+
                     <Route path="/exams/:examid/:classid/:sectionid/:subjectid/upload-marks" element={<UploadMarks />} />
                     <Route path="/exams/:examid/:classid/:sectionid/:subjectid/upload" element={<TeacherExamUpload />} />
                     <Route path="/videos" element={<Videos />} />
@@ -102,7 +102,7 @@ function App() {
                     <Route path="/admin/attendance" element={<AdminAttendance />} />
                     <Route path="/admin/exams" element={<AdminExams />} />
                     <Route path="/admin/exams/create" element={<CreateExam />} />
-                    <Route path="/admin/exams/edit/:id" element={<EditExam />} />
+
                     <Route path="/admin/exams/define" element={<DefineQuestions />} />
                     <Route path="/admin/reports" element={<AdminReports />} />
                     <Route path="/admin/notifications" element={<AdminNotifications />} />

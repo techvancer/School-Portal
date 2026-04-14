@@ -122,7 +122,7 @@ export default function SupervisorExams() {
                 if (qStatuses.includes('cancelled')) examStatus = 'Cancelled';
                 else if (qStatuses.includes('marked') || qStatuses.includes('completed')) examStatus = 'Marked';
                 else if (qStatuses.includes('submitted')) examStatus = 'Submitted';
-                else if (tookCount > 0) examStatus = 'Marked';
+
                 
                 return {
                     ...r,

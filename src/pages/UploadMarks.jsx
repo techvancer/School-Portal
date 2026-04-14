@@ -259,7 +259,7 @@ export default function UploadMarks() {
             for (const qObj of questions) {
                 const questionid = qObj.questionid;
                 const value = sourceMarks?.[student.studentid]?.[questionid];
-                if (value === '' || value === undefined || value === null) continue;
+                const markValue = (value === '' || value === undefined || value === null) ? null : String(value);
 
                 await insert('studentanswers_tbl', {
                     questionid,
@@ -277,7 +277,7 @@ export default function UploadMarks() {
                     branchid: user.branchid,
                     schoolid: user.schoolid,
                     typeid: 1,
-                    studentmark: String(value),
+                    studentmark: markValue,
                 });
                 saved += 1;
             }

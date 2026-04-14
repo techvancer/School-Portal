@@ -85,13 +85,6 @@ function buildCrumbs(pathname, lang) {
         return crumbs;
     }
 
-    const editExamMatch = pathname.match(/^\/exams\/edit\/(.+)$/);
-    if (editExamMatch) {
-        crumbs.push({ label: getRouteLabel('/exams', lang) || 'Exams', path: '/exams' });
-        crumbs.push({ label: lang === 'ar' ? 'تعديل الامتحان' : 'Edit Exam', path: null });
-        return crumbs;
-    }
-
     // Static routes
     if (pathname === dashPath) return crumbs;
 

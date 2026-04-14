@@ -311,18 +311,23 @@ export default function TeacherExamUpload() {
                 if (isAG) {
                     // Auto-graded: save student_answer + auto-calculated studentmark
                     const answer = sourceAnswers?.[student.studentid]?.[questionid];
-                    if (answer === '' || answer === undefined || answer === null) continue;
+                    const isBlank = (answer === '' || answer === undefined || answer === null);
 
-                    // For MCQ: convert displayed letter → position for storage and comparison
-                    const isMCQ = qObj.question_type === 'multiple_choice';
-                    const storedAnswer = isMCQ ? (letterToPosition(answer, lang) ?? String(answer)) : String(answer);
-                    // Normalize question_answer: may be stored as letter (old exams) or position (new exams)
-                    const rawCorrect = String(qObj.question_answer || '').trim();
-                    const correct = isMCQ
-                        ? (letterToPosition(rawCorrect, lang) ?? rawCorrect.toLowerCase())
-                        : rawCorrect.toLowerCase();
-                    const given = storedAnswer.trim().toLowerCase();
-                    const computedMark = given === correct ? String(qObj.question_marks) : '0';
+                    let storedAnswer = null;
+                    let computedMark = null;
+
+                    if (!isBlank) {
+                        // For MCQ: convert displayed letter → position for storage and comparison
+                        const isMCQ = qObj.question_type === 'multiple_choice';
+                        storedAnswer = isMCQ ? (letterToPosition(answer, lang) ?? String(answer)) : String(answer);
+                        // Normalize question_answer: may be stored as letter (old exams) or position (new exams)
+                        const rawCorrect = String(qObj.question_answer || '').trim();
+                        const correct = isMCQ
+                            ? (letterToPosition(rawCorrect, lang) ?? rawCorrect.toLowerCase())
+                            : rawCorrect.toLowerCase();
+                        const given = storedAnswer.trim().toLowerCase();
+                        computedMark = given === correct ? String(qObj.question_marks) : '0';
+                    }
 
                     await insert('studentanswers_tbl', {
                         questionid,
@@ -347,7 +352,8 @@ export default function TeacherExamUpload() {
                 } else {
                     // Normal: save numeric studentmark
                     const value = sourceMarks?.[student.studentid]?.[questionid];
-                    if (value === '' || value === undefined || value === null) continue;
+                    const markValue = (value === '' || value === undefined || value === null) ? null : String(value);
+                    
                     await insert('studentanswers_tbl', {
                         questionid,
                         studentid: student.studentid,
@@ -365,7 +371,7 @@ export default function TeacherExamUpload() {
                         schoolid: user.schoolid,
                         typeid: 1,
                         attempt_number: meta.attemptNumber ?? 1,
-                        studentmark: String(value),
+                        studentmark: markValue,
                     });
                 }
                 saved += 1;

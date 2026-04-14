@@ -283,11 +283,44 @@ export default function EditMarks() {
         try {
             let saved = 0;
             for (const stu of students) {
+                const existingEnr = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
+                    studentid: `eq.${stu.studentid}`,
+                    examid: `eq.${parseInt(selExam)}`,
+                    employeeid: `eq.${user.employeeid}`,
+                    classid: `eq.${sec.classid}`,
+                    sectionid: `eq.${sec.sectionid}`,
+                    subjectid: `eq.${sec.subjectid}`,
+                    select: 'studentid',
+                });
+                if (!existingEnr?.length) {
+                    await insert('students_exams_employees_section_subjects_classes_semisters_cur', {
+                        studentid: stu.studentid,
+                        examid: parseInt(selExam),
+                        employeeid: user.employeeid,
+                        subjectid: sec.subjectid,
+                        sectionid: sec.sectionid,
+                        classid: sec.classid,
+                        semisterid: 1,
+                        yearid: 2026,
+                        stageid: sec.stageid,
+                        curriculumid: user.curriculumid || 1,
+                        divisionid: user.divisionid || 1,
+                        branchid: user.branchid,
+                        schoolid: user.schoolid,
+                    });
+                }
+
                 for (const q of questions) {
                     const answer = marks[stu.studentid]?.[q.questionid];
-                    if (answer === undefined || answer === '') continue;
-                    const numVal = parseFloat(answer);
-                    if (isNaN(numVal)) continue;
+                    if (answer === undefined) continue;
+
+                    let markValue = null;
+                    if (answer !== '' && answer !== null) {
+                        const numVal = parseFloat(answer);
+                        if (isNaN(numVal)) continue;
+                        markValue = String(numVal);
+                    }
+
                     try {
                         await insert('studentanswers_tbl', {
                             questionid: q.questionid, studentid: stu.studentid, examid: parseInt(selExam),
@@ -296,7 +329,7 @@ export default function EditMarks() {
                             semisterid: 1, yearid: 2026, stageid: sec.stageid,
                             curriculumid: user.curriculumid || 1, divisionid: user.divisionid || 1,
                             branchid: user.branchid, schoolid: user.schoolid, typeid: 1,
-                            studentmark: String(numVal),
+                            studentmark: markValue,
                         });
                         saved++;
                     } catch (insertError) {
@@ -305,7 +338,7 @@ export default function EditMarks() {
                                 await dbQuery(
                                     `studentanswers_tbl?questionid=eq.${q.questionid}&studentid=eq.${stu.studentid}&examid=eq.${parseInt(selExam)}&employeeid=eq.${user.employeeid}&classid=eq.${sec.classid}&sectionid=eq.${sec.sectionid}&subjectid=eq.${sec.subjectid}`,
                                     'PATCH',
-                                    { studentmark: String(numVal) },
+                                    { studentmark: markValue },
                                     'return=minimal'
                                 );
                                 saved++;

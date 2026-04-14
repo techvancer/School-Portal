@@ -88,7 +88,7 @@ export default function AdminExams() {
                     let examStatus;
                     if (qStatus === 'cancelled' || dbStatus === 'cancelled') examStatus = 'cancelled';
                     else if (qStatus === 'submitted' || dbStatus === 'submitted') examStatus = 'submitted';
-                    else if (['marked', 'completed', 'inprogress'].includes(qStatus) || ['marked', 'completed', 'inprogress'].includes(dbStatus) || answersMap[`${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}`]) examStatus = 'marked';
+                    else if (['marked', 'completed', 'inprogress'].includes(qStatus) || ['marked', 'completed', 'inprogress'].includes(dbStatus)) examStatus = 'marked';
                     else examStatus = 'new';
 
                     seen.set(key, {

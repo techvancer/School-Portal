@@ -92,11 +92,11 @@ export default function Exams() {
             ]);
 
             // Scope classes/sections/subjects to IDs in both student enrollments and question rows
-            const neededClassIds   = [...new Set([...stuExams.map(r => r.classid),   ...(questionRows || []).map(q => q.classid)])];
+            const neededClassIds = [...new Set([...stuExams.map(r => r.classid), ...(questionRows || []).map(q => q.classid)])];
             const neededSectionIds = [...new Set([...stuExams.map(r => r.sectionid), ...(questionRows || []).map(q => q.sectionid)])];
             const neededSubjectIds = [...new Set([...stuExams.map(r => r.subjectid), ...(questionRows || []).map(q => q.subjectid)])];
             const [clTbl, secRows, subTbl] = await Promise.all([
-                neededClassIds.length   ? rest('classes_tbl',  { classid:   `in.(${neededClassIds})`,   select: 'classid,classname,classname_en' })   : [],
+                neededClassIds.length ? rest('classes_tbl', { classid: `in.(${neededClassIds})`, select: 'classid,classname,classname_en' }) : [],
                 neededSectionIds.length ? rest('sections_tbl', { sectionid: `in.(${neededSectionIds})`, select: 'sectionid,sectionname,sectionname_en' }) : [],
                 neededSubjectIds.length ? rest('subjects_tbl', { subjectid: `in.(${neededSubjectIds})`, select: 'subjectid,subjectname,Subjectname_en' }) : [],
             ]);
@@ -146,9 +146,9 @@ export default function Exams() {
                 const q0 = qs[0];
                 const attemptNum = parseInt(q0.attempt_number, 10) || 1;
                 const exam = examTbl.find(e => e.examid === q0.examid);
-                const cl   = clTbl.find(c => c.classid   === q0.classid);
-                const sec  = secRows.find(s => s.sectionid === q0.sectionid);
-                const sub  = subTbl.find(s => s.subjectid  === q0.subjectid);
+                const cl = clTbl.find(c => c.classid === q0.classid);
+                const sec = secRows.find(s => s.sectionid === q0.sectionid);
+                const sub = subTbl.find(s => s.subjectid === q0.subjectid);
 
                 const totalMark = qs.reduce((sum, q) => sum + (parseFloat(q.question_marks) || 0), 0);
 
@@ -160,8 +160,8 @@ export default function Exams() {
                 else status = 'new';
 
                 const attemptAnswers = (answers || []).filter(a =>
-                    String(a.examid)    === String(q0.examid) &&
-                    String(a.classid)   === String(q0.classid) &&
+                    String(a.examid) === String(q0.examid) &&
+                    String(a.classid) === String(q0.classid) &&
                     String(a.sectionid) === String(q0.sectionid) &&
                     String(a.subjectid) === String(q0.subjectid) &&
                     (parseInt(a.attempt_number, 10) || 1) === attemptNum
@@ -171,27 +171,27 @@ export default function Exams() {
                 const totalStudents = classSectionStudentCounts[`${q0.classid}-${q0.sectionid}`] ?? 0;
 
                 const stuRow = stuExams.find(x =>
-                    String(x.examid)    === String(q0.examid) &&
-                    String(x.classid)   === String(q0.classid) &&
+                    String(x.examid) === String(q0.examid) &&
+                    String(x.classid) === String(q0.classid) &&
                     String(x.sectionid) === String(q0.sectionid) &&
                     String(x.subjectid) === String(q0.subjectid)
                 );
 
                 return {
-                    examid:         q0.examid,
-                    classid:        q0.classid,
-                    sectionid:      q0.sectionid,
-                    subjectid:      q0.subjectid,
+                    examid: q0.examid,
+                    classid: q0.classid,
+                    sectionid: q0.sectionid,
+                    subjectid: q0.subjectid,
                     attempt_number: attemptNum,
-                    stageid:        stuRow?.stageid,
-                    semisterid:     stuRow?.semisterid,
-                    yearid:         stuRow?.yearid,
-                    curriculumid:   stuRow?.curriculumid,
-                    divisionid:     stuRow?.divisionid,
+                    stageid: stuRow?.stageid,
+                    semisterid: stuRow?.semisterid,
+                    yearid: stuRow?.yearid,
+                    curriculumid: stuRow?.curriculumid,
+                    divisionid: stuRow?.divisionid,
                     status, marksEntered, totalStudents, totalMark,
-                    examname:    getField(exam, 'examname',    'examname_en',    lang) || `Exam ${q0.examid}`,
-                    examType:    q0.exam_type || 'normal',
-                    classname:   getField(cl,  'classname',   'classname_en',   lang) || cl?.classname   || String(q0.classid),
+                    examname: getField(exam, 'examname', 'examname_en', lang) || `Exam ${q0.examid}`,
+                    examType: q0.exam_type || 'normal',
+                    classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname || String(q0.classid),
                     sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname || String(q0.sectionid),
                     subjectname: getField(sub, 'subjectname', 'Subjectname_en', lang) || sub?.subjectname || String(q0.subjectid),
                 };
@@ -304,6 +304,18 @@ export default function Exams() {
         if (!e) return;
         setProcessing(true);
         try {
+            const attemptQs = await rest('questions_exams_employee_subjects_sections_tbl', {
+                examid: `eq.${e.examid}`,
+                employeeid: `eq.${user.employeeid}`,
+                classid: `eq.${e.classid}`,
+                sectionid: `eq.${e.sectionid}`,
+                subjectid: `eq.${e.subjectid}`,
+                select: 'attempt_number'
+            }).catch(() => []);
+            const latestAttemptNum = attemptQs.length > 0
+                ? Math.max(...attemptQs.map(q => parseInt(q.attempt_number, 10) || 1))
+                : (parseInt(e.attempt_number, 10) || 1);
+
             const response = await fetch('https://n8n.srv1133195.hstgr.cloud/webhook-test/strat_grading', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -312,10 +324,19 @@ export default function Exams() {
                     examid: e.examid, classid: e.classid, sectionid: e.sectionid,
                     subjectid: e.subjectid, employeeid: user.employeeid,
                     timestamp: new Date().toISOString(),
+                    schoolid: user.schoolid,
+                    schoolname_en: user.schoolName,
+                    semisterid: e.semisterid,
+                    yearid: e.yearid,
+                    stageid: e.stageid,
+                    curriculumid: e.curriculumid,
+                    branchid: user.branchid,
+                    divisionid: e.divisionid,
+                    attempt_number: latestAttemptNum,
                 }),
             });
             await dbQuery(
-                `questions_exams_employee_subjects_sections_tbl?examid=eq.${e.examid}&employeeid=eq.${user.employeeid}&classid=eq.${e.classid}&sectionid=eq.${e.sectionid}&subjectid=eq.${e.subjectid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`,
+                `questions_exams_employee_subjects_sections_tbl?examid=eq.${e.examid}&employeeid=eq.${user.employeeid}&classid=eq.${e.classid}&sectionid=eq.${e.sectionid}&subjectid=eq.${e.subjectid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}&attempt_number=eq.${latestAttemptNum}`,
                 'PATCH', { status: 'submitted' }, 'return=minimal'
             );
             if (response.ok) { addToast('Marks processing started!', 'success'); }
@@ -338,7 +359,7 @@ export default function Exams() {
         }
         // First, grab only non-cancelled rows for this exam
         const activeExamRows = exams.filter(e => String(e.examid) === String(examId) && e.status !== 'cancelled');
-        
+
         // Deduplicate by class-section-subject so we don't fetch/sum the same combo multiple times
         // if there happened to be multiple active attempts.
         const uniqueKeys = new Set();
@@ -494,7 +515,7 @@ export default function Exams() {
                     );
                     return { scores, totalMax };
                 });
-                
+
                 const allScores = results.flatMap(r => r.scores).filter(s => s >= 0);
                 const validMaxes = results.map(r => r.totalMax).filter(m => m > 0);
                 // All Exams: sum all exam max marks. Single exam: use that exam's max
@@ -653,14 +674,14 @@ export default function Exams() {
                         <table className={`w-full ${isAr ? 'text-right' : 'text-left'}`}>
                             <thead className="bg-slate-50 border-b border-[#e2e8f0]">
                                 <tr>
-                                    <SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch==='classname'} onSearchOpen={()=>setActiveSearch('classname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('classname','');}} onSearchChange={v=>setColumnSearch('classname',v)}>{t('class', lang)}</SortableTh>
-                                    <SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch==='sectionname'} onSearchOpen={()=>setActiveSearch('sectionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('sectionname','');}} onSearchChange={v=>setColumnSearch('sectionname',v)}>{t('section', lang)}</SortableTh>
-                                    <SortableTh col="subjectname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['subjectname']} isSearchOpen={activeSearch==='subjectname'} onSearchOpen={()=>setActiveSearch('subjectname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectname','');}} onSearchChange={v=>setColumnSearch('subjectname',v)}>{t('subject', lang)}</SortableTh>
-                                    <SortableTh col="examname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['examname']} isSearchOpen={activeSearch==='examname'} onSearchOpen={()=>setActiveSearch('examname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('examname','');}} onSearchChange={v=>setColumnSearch('examname',v)}>{t('exam', lang)}</SortableTh>
+                                    <SortableTh col="classname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['classname']} isSearchOpen={activeSearch === 'classname'} onSearchOpen={() => setActiveSearch('classname')} onSearchClose={() => { setActiveSearch(null); setColumnSearch('classname', ''); }} onSearchChange={v => setColumnSearch('classname', v)}>{t('class', lang)}</SortableTh>
+                                    <SortableTh col="sectionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['sectionname']} isSearchOpen={activeSearch === 'sectionname'} onSearchOpen={() => setActiveSearch('sectionname')} onSearchClose={() => { setActiveSearch(null); setColumnSearch('sectionname', ''); }} onSearchChange={v => setColumnSearch('sectionname', v)}>{t('section', lang)}</SortableTh>
+                                    <SortableTh col="subjectname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['subjectname']} isSearchOpen={activeSearch === 'subjectname'} onSearchOpen={() => setActiveSearch('subjectname')} onSearchClose={() => { setActiveSearch(null); setColumnSearch('subjectname', ''); }} onSearchChange={v => setColumnSearch('subjectname', v)}>{t('subject', lang)}</SortableTh>
+                                    <SortableTh col="examname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['examname']} isSearchOpen={activeSearch === 'examname'} onSearchOpen={() => setActiveSearch('examname')} onSearchClose={() => { setActiveSearch(null); setColumnSearch('examname', ''); }} onSearchChange={v => setColumnSearch('examname', v)}>{t('exam', lang)}</SortableTh>
                                     <SortableTh col="examType" sortCol={sortCol} sortDir={sortDir} onSort={handleSort}>{isAr ? 'نوع الامتحان' : 'Exam Type'}</SortableTh>
                                     <SortableTh col="marksEntered" sortCol={sortCol} sortDir={sortDir} onSort={handleSort}>{t('marksEntered', lang)}</SortableTh>
                                     <SortableTh col="totalMark" sortCol={sortCol} sortDir={sortDir} onSort={handleSort}>{isAr ? 'الدرجة الإجمالية' : 'Total Mark'}</SortableTh>
-                                    <SortableTh col="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['status']} isSearchOpen={activeSearch==='status'} onSearchOpen={()=>setActiveSearch('status')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('status','');}} onSearchChange={v=>setColumnSearch('status',v)}>{t('status', lang)}</SortableTh>
+                                    <SortableTh col="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} searchValue={columnSearch['status']} isSearchOpen={activeSearch === 'status'} onSearchOpen={() => setActiveSearch('status')} onSearchClose={() => { setActiveSearch(null); setColumnSearch('status', ''); }} onSearchChange={v => setColumnSearch('status', v)}>{t('status', lang)}</SortableTh>
                                     <th className="py-4 px-6 text-xs font-black text-[#64748b] uppercase tracking-wider">{t('actions', lang)}</th>
                                 </tr>
                             </thead>

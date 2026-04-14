@@ -3,8 +3,8 @@
 // Every request is authenticated: the caller's JWT is verified against Supabase,
 // and their role + school are checked before any operation is executed.
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SERVICE_KEY  = process.env.VITE_SUPABASE_SERVICE_KEY;
+let SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+let SERVICE_KEY  = process.env.VITE_SUPABASE_SERVICE_KEY;
 
 // ── Per-role write allowlist ──────────────────────────────────────────────────
 // Only tables listed here can be written to by each role.
@@ -109,6 +109,9 @@ function isAllowedTable(role, table) {
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  if (!SUPABASE_URL) SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+  if (!SERVICE_KEY) SERVICE_KEY = process.env.VITE_SUPABASE_SERVICE_KEY;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
