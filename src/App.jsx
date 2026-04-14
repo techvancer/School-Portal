@@ -37,7 +37,6 @@ import AdminAttendance from './pages/admin/Attendance';
 import AdminExams from './pages/admin/Exams';
 import AdminReports from './pages/admin/Reports';
 import AdminNotifications from './pages/admin/Notifications';
-import ClassManagement from './pages/admin/ClassManagement';
 import SubjectDetail from './pages/admin/SubjectDetail';
 import DefineQuestions from './pages/admin/DefineQuestions';
 
@@ -95,7 +94,6 @@ function App() {
                     <Route path="/admin/students/enroll" element={<AdminEnrollStudent />} />
                     <Route path="/admin/students/edit/:id" element={<AdminEditStudent />} />
                     <Route path="/admin/classes" element={<AdminClasses />} />
-                    <Route path="/admin/classes/:id" element={<ClassManagement />} />
                     <Route path="/admin/subjects" element={<AdminSubjects />} />
                     <Route path="/admin/subjects/:id" element={<SubjectDetail />} />
                     <Route path="/admin/assignments" element={<AdminAssignments />} />

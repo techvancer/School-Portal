@@ -80,17 +80,9 @@ export function calcGradeFromList(pct, grades) {
     return { label, color: GRADE_COLORS[label] || 'bg-slate-100 text-slate-800 border-slate-300', pass };
 }
 
-// Sync fallback (uses cache if loaded, else hardcoded fallback)
+// Sync grade calc — uses DB cache if loaded, otherwise returns placeholder
 export function calcGrade(pct) {
-    const grades = _gradesCache || [
-        { gradename: 'A', frommark: 90, tomark: 100 },
-        { gradename: 'B', frommark: 80, tomark: 89  },
-        { gradename: 'C', frommark: 70, tomark: 79  },
-        { gradename: 'D', frommark: 60, tomark: 69  },
-        { gradename: 'E', frommark: 50, tomark: 59  },
-        { gradename: 'F', frommark: 0,  tomark: 49  },
-    ];
-    return calcGradeFromList(pct, grades);
+    return calcGradeFromList(pct, _gradesCache || []);
 }
 
 // ─── CHANGE 2: Universal filter order helper ─────────────────────────────
