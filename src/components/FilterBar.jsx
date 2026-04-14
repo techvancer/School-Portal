@@ -34,9 +34,6 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
         }
         return false;
     };
-    // Keep isDraftDisabled as alias for backward compat
-    const isDraftDisabled = isLocked;
-
     useEffect(() => {
         let autoNext = null;
         setDraft(prev => {
@@ -73,10 +70,12 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
         if (autoNext && onChange) onChange(autoNext);
     }, [filters.map(f => (f.options||[]).length).join(',')]); // eslint-disable-line
 
-    // After any selection, cascade auto-select for downstream filters that have exactly one option and are now unlocked
-    const cascadeAutoSelect = (d) => {
+    // After any selection, cascade auto-select for downstream filters that have exactly one option and are now unlocked.
+    // skipKey: the filter the user just changed — never auto-override their explicit choice.
+    const cascadeAutoSelect = (d, skipKey = null) => {
         const result = { ...d };
         filters.forEach(f => {
+            if (f.key === skipKey) return; // don't override the user's explicit selection
             const realOpts = (f.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
             const fidx = filters.findIndex(ff => ff.key === f.key);
             const locked = fidx > 0 && filters.slice(0, fidx).some(prev => {
@@ -91,15 +90,17 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
     };
 
     const handleChange = (key, val) => {
-        // When a filter changes, reset all downstream filters to 'All'
-        // Hierarchy order: curriculumid → divisionid → stageid → classid → sectionid → subjectid → examid/semisterid
-        const order = ['curriculumid', 'divisionid', 'stageid', 'classid', 'sectionid', 'subjectid', 'examid', 'semisterid'];
-        const idx = order.indexOf(key);
+        // Reset all filters that come AFTER the changed one in the displayed order.
+        // Using the filters array position (not a hardcoded hierarchy) so pages that
+        // display filters in a custom order (e.g. Division before Curriculum) don't
+        // have upstream filters reset when a downstream one changes.
+        const idx = filters.findIndex(f => f.key === key);
         let newDraft = { ...draft, [key]: val };
         if (idx >= 0) {
-            order.slice(idx + 1).forEach(k => { newDraft[k] = 'All'; });
+            filters.slice(idx + 1).forEach(f => { newDraft[f.key] = 'All'; });
         }
-        newDraft = cascadeAutoSelect(newDraft);
+        // Pass skipKey so the user's explicit choice (including 'All') is never overridden.
+        newDraft = cascadeAutoSelect(newDraft, key);
         setDraft(newDraft);
         if (onChange) onChange(newDraft);
         if (fieldErrors[key]) setFieldErrors(prev => ({ ...prev, [key]: false }));

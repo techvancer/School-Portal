@@ -31,7 +31,7 @@ export default function AdminSubjects() {
   const [loading, setLoading] = useState(true);
   const [hasApplied, setHasApplied] = useState(true); // Subjects loads initially per spec
   const [search, setSearch] = useState('');
-  const [applied, setApplied] = useState({ subjectid: 'All', curriculumid: 'All', divisionid: 'All', stageid: 'All', classid: 'All' });
+  const [applied, setApplied] = useState({ curriculumid: 'All', divisionid: 'All', stageid: 'All', classid: 'All' });
   const [showAddRow, setShowAddRow] = useState(false);
   const [newRow, setNewRow] = useState({ Subjectname_en: '', subjectname: '' });
   const [selected, setSelected] = useState(null);
@@ -54,13 +54,14 @@ export default function AdminSubjects() {
       ]);
       const enriched = subList.map((subject) => {
         const rows = assignments.filter((row) => row.subjectid === subject.subjectid);
+        const classIds = [...new Set(rows.map(r => r.classid))];
         const labels = [...new Map(rows.map((row) => {
           const classRow = classesTbl.find((c) => c.classid === row.classid);
           const sectionRow = sectionsTbl.find((s) => s.sectionid === row.sectionid);
            const label = `${t('class', lang)} ${classRow?.classname || row.classid}${sectionRow ? ` - ${sectionRow.sectionname}` : ''}`;
           return [label, label];
         })).values()];
-        return { ...subject, classes: labels };
+        return { ...subject, classes: labels, classIds };
       });
       setSubjects(enriched);
     } catch (e) {
@@ -74,7 +75,7 @@ export default function AdminSubjects() {
   useEffect(() => {
     if (!user || hasRunFromState.current) return;
     hasRunFromState.current = true;
-    const keys = ['curriculumid','divisionid','stageid','classid','subjectid'];
+    const keys = ['curriculumid','divisionid','stageid','classid'];
     const fromUrl = {};
     const state = location.state || {};
     keys.forEach(k => { if (state[k]) fromUrl[k] = state[k]; });
@@ -87,8 +88,8 @@ export default function AdminSubjects() {
 
   const filtered = applyColumnSearch(sortedSubjects.filter((s) => {
     const ms = !search || getField(s, 'subjectname', 'Subjectname_en', lang)?.toLowerCase().includes(search.toLowerCase()) || s.subjectname?.toLowerCase().includes(search.toLowerCase());
-    const msub = applied.subjectid === 'All' || String(s.subjectid) === applied.subjectid;
-    return ms && msub;
+    const mclass = applied.classid === 'All' || (s.classIds || []).includes(Number(applied.classid));
+    return ms && mclass;
   }));
 
   async function createSubject(payload) {
@@ -304,10 +305,9 @@ export default function AdminSubjects() {
           { key: 'divisionid',   label: t('division', lang),   value: applied.divisionid   ?? 'All', options: filterData.divisions  || [] },
           { key: 'stageid',      label: t('stage', lang),      value: applied.stageid      ?? 'All', options: filterData.stages     || [] },
           { key: 'classid',      label: t('class', lang),      value: applied.classid      ?? 'All', options: filterData.classes    || [] },
-          { key: 'subjectid',    label: t('subject', lang),    value: applied.subjectid    ?? 'All', options: filterData.subjects   || [] },
         ]}
         onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(); }}
-        onReset={(vals) => { setApplied({ subjectid: 'All', curriculumid: 'All', divisionid: 'All', stageid: 'All', classid: 'All' }); setHasApplied(false); setSubjects([]); }}
+        onReset={() => { setApplied({ curriculumid: 'All', divisionid: 'All', stageid: 'All', classid: 'All' }); setHasApplied(false); setSubjects([]); }}
       />
 
       <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 flex items-center gap-3">

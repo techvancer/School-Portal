@@ -429,7 +429,7 @@ export default function AdminStudents() {
       </div>
 
       <FilterBar
-        filters={buildFilters(applied, filterData, {}, lang).filter(f => f.key !== 'examid' && f.key !== 'semisterid')}
+        filters={buildFilters(applied, filterData, {}, lang).filter(f => f.key !== 'examid' && f.key !== 'semisterid' && f.key !== 'subjectid')}
         appliedFilters={applied}
 
         onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(); }}

@@ -46,7 +46,7 @@ export default function AdminExams() {
                 ...f('classid'), ...f('sectionid'), ...f('subjectid'), ...f('examid'),
                 ...(filters.employeeid && filters.employeeid !== 'All' ? { employeeid: `eq.${filters.employeeid}` } : {}),
             };
-            const [stuExams, examList, clTbl, secRows, subList, empList, enrollmentData, answersData] = await Promise.all([
+            const [stuExams, examList, clTbl, secRows, subList, empList, enrollmentData, answersData, sclTbl, divTbl, curTbl] = await Promise.all([
                 rest('questions_exams_employee_subjects_sections_tbl', examQueryParams),
                 rest('exams_tbl', { select: '*' }),
                 rest('classes_tbl', { select: '*' }),
@@ -55,6 +55,9 @@ export default function AdminExams() {
                 rest('employee_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
                 rest('students_sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'studentid,classid,sectionid' }).catch(() => []),
                 rest('studentanswers_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid' }).catch(() => []),
+                rest('sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'classid,sectionid,stageid,divisionid,curriculumid' }).catch(() => []),
+                rest('divisions_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'divisionid,divisionname,divisionname_en' }).catch(() => []),
+                rest('curriculums_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'curriculumid,curriculumname,curriculumname_en' }).catch(() => []),
             ]);
 
             // Build class enrollment map
@@ -81,6 +84,9 @@ export default function AdminExams() {
                     const sec = secRows.find(s => s.sectionid === r.sectionid);
                     const sub = subList.find(s => s.subjectid === r.subjectid);
                     const emp = empList.find(e => e.employeeid === r.employeeid);
+                    const scl = (sclTbl || []).find(s => s.classid === r.classid && s.sectionid === r.sectionid);
+                    const div = (divTbl || []).find(d => d.divisionid === scl?.divisionid);
+                    const cur = (curTbl || []).find(c => c.curriculumid === scl?.curriculumid);
 
                     const dbStatus = String(exam?.status || '').toLowerCase();
                     const qStatus = String(r.status || '').toLowerCase();
@@ -109,6 +115,11 @@ export default function AdminExams() {
                         subjectNameEn: sub?.Subjectname_en || '',
                         teacherName: getField(emp, 'employeename', 'employeename_en', lang) || emp?.employeename || '—',
                         teacherEmail: emp?.employeeemail || '',
+                        curriculumid: scl?.curriculumid ?? null,
+                        divisionid: scl?.divisionid ?? null,
+                        stageid: scl?.stageid ?? null,
+                        curriculumname: getField(cur, 'curriculumname', 'curriculumname_en', lang) || '—',
+                        divisionname: getField(div, 'divisionname', 'divisionname_en', lang) || '—',
                         studentCount: enrollMap[`${r.classid}-${r.sectionid}`] || 0,
                         examStatus: examStatus,
                         totalmarks: exam?.totalmarks ?? exam?.total_marks ?? null,
@@ -155,7 +166,10 @@ export default function AdminExams() {
         const msub = applied.subjectid === 'All' || String(r.subjectid) === applied.subjectid;
         const mex = applied.examid === 'All' || String(r.examid) === applied.examid;
         const mem = applied.employeeid === 'All' || String(r.employeeid) === applied.employeeid;
-        return matchSearch && mc && ms && msub && mex && mem;
+        const mcur = applied.curriculumid === 'All' || String(r.curriculumid) === applied.curriculumid;
+        const mdiv = applied.divisionid === 'All' || String(r.divisionid) === applied.divisionid;
+        const mst = applied.stageid === 'All' || String(r.stageid) === applied.stageid;
+        return matchSearch && mc && ms && msub && mex && mem && mcur && mdiv && mst;
     });
     const columnFiltered = applyColumnSearch(filtered);
 
@@ -227,6 +241,8 @@ export default function AdminExams() {
                                 <SortableTh col="subjectName" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['subjectName']} isSearchOpen={activeSearch==='subjectName'} onSearchOpen={()=>setActiveSearch('subjectName')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('subjectName','');}} onSearchChange={v=>setColumnSearch('subjectName',v)}>{t('subject', lang)}</SortableTh>
                                 <SortableTh col="examName" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['examName']} isSearchOpen={activeSearch==='examName'} onSearchOpen={()=>setActiveSearch('examName')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('examName','');}} onSearchChange={v=>setColumnSearch('examName',v)}>{t('exam', lang)}</SortableTh>
                                 <SortableTh col="teacherName" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['teacherName']} isSearchOpen={activeSearch==='teacherName'} onSearchOpen={()=>setActiveSearch('teacherName')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('teacherName','');}} onSearchChange={v=>setColumnSearch('teacherName',v)}>{t('teacher', lang)}</SortableTh>
+                                <SortableTh col="curriculumname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['curriculumname']} isSearchOpen={activeSearch==='curriculumname'} onSearchOpen={()=>setActiveSearch('curriculumname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('curriculumname','');}} onSearchChange={v=>setColumnSearch('curriculumname',v)}>{t('curriculum', lang)}</SortableTh>
+                                <SortableTh col="divisionname" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['divisionname']} isSearchOpen={activeSearch==='divisionname'} onSearchOpen={()=>setActiveSearch('divisionname')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('divisionname','');}} onSearchChange={v=>setColumnSearch('divisionname',v)}>{t('division', lang)}</SortableTh>
                                 <SortableTh col="studentCount" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6">{t('students', lang)}</SortableTh>
                                 <SortableTh col="examStatus" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-6" searchValue={columnSearch['examStatus']} isSearchOpen={activeSearch==='examStatus'} onSearchOpen={()=>setActiveSearch('examStatus')} onSearchClose={()=>{setActiveSearch(null);setColumnSearch('examStatus','');}} onSearchChange={v=>setColumnSearch('examStatus',v)}>{t('status', lang)}</SortableTh>
                                 <th className="px-6 py-4 text-xs font-bold text-[#64748b] uppercase tracking-wider text-right">{t('action', lang)}</th>
@@ -234,14 +250,14 @@ export default function AdminExams() {
                         </thead>
                         <tbody className="divide-y divide-[#e2e8f0]">
                             {!hasApplied && (
-                                <tr><td colSpan={7} className="px-6 py-20 text-center text-[#94a3b8] font-medium">{t('pressApplyToLoad', lang)}</td></tr>
+                                <tr><td colSpan={9} className="px-6 py-20 text-center text-[#94a3b8] font-medium">{t('pressApplyToLoad', lang)}</td></tr>
                             )}
                             {hasApplied && loading && (
-                                <tr><td colSpan={7} className="px-6 py-16 text-center text-[#94a3b8]">{t('loading', lang)}</td></tr>
+                                <tr><td colSpan={9} className="px-6 py-16 text-center text-[#94a3b8]">{t('loading', lang)}</td></tr>
                             )}
                             {hasApplied && !loading && columnFiltered.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-20 text-center">
+                                    <td colSpan={9} className="px-6 py-20 text-center">
                                         <div className="flex flex-col items-center gap-3">
                                             <ClipboardList className="h-10 w-10 text-slate-200" />
                                             <p className="text-slate-400 font-medium">{t('noData', lang)}</p>
@@ -272,6 +288,8 @@ export default function AdminExams() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.teacherName}</td>
+                                            <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.curriculumname}</td>
+                                            <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.divisionname}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="flex items-center gap-1.5 text-[#10b981] text-xs font-bold bg-green-50 px-2.5 py-1 rounded-full border border-green-100 w-fit">
                                                     <CheckCircle className="h-3 w-3" /> {row.studentCount}

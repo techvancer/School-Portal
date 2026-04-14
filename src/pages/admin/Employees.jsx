@@ -93,8 +93,8 @@ export default function AdminEmployees() {
           ...teacherAssigns.filter(r => r.employeeid === e.employeeid),
           ...supervisorAssigns.filter(r => r.employeeid === e.employeeid),
         ];
-        // Also include employee_tbl divisionid/curriculumid if set
-        if (e.divisionid && e.curriculumid) {
+        // Also include employee_tbl divisionid/curriculumid if either is set
+        if (e.divisionid || e.curriculumid) {
           allAssignRows.push({ divisionid: e.divisionid, curriculumid: e.curriculumid });
         }
         // Deduplicate by divisionid+curriculumid
@@ -324,6 +324,8 @@ export default function AdminEmployees() {
         const empemail   = getCol(['employeeemail', 'email']);
         let empmobile  = getCol(['employeemobile', 'mobile']);
         const typeRaw    = getCol(['type']).toLowerCase();
+        // Treat "-", "—", whitespace-only as "not provided" — Division and Curriculum are optional
+        const isDash = v => /^[-–—\s]*$/.test(v);
         const divRaw     = getCol(['divisionname', 'division name', 'division']);
         const curRaw     = getCol(['curriculumname', 'curriculum name', 'curriculum']);
 
@@ -359,7 +361,7 @@ export default function AdminEmployees() {
         else if (!/^\d{10}$/.test(empmobile)) rowErrors.push(`Mobile "${empmobile}" must be exactly 10 digits`);
 
         let divisionid = null;
-        if (divRaw) {
+        if (divRaw && !isDash(divRaw)) {
           const divMatch = divisions.find(d => (getField(d, 'divisionname', 'divisionname_en', lang) || d.divisionname || '').toLowerCase() === divRaw.toLowerCase());
           if (!divMatch) {
             const validDivisions = divisions.map(d => getField(d, 'divisionname', 'divisionname_en', lang) || d.divisionname).join(', ');
@@ -368,7 +370,7 @@ export default function AdminEmployees() {
         }
 
         let curriculumid = null;
-        if (curRaw) {
+        if (curRaw && !isDash(curRaw)) {
           const curMatch = curriculums.find(c => (getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname || '').toLowerCase() === curRaw.toLowerCase());
           if (!curMatch) {
             const validCurriculums = curriculums.map(c => getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname).join(', ');

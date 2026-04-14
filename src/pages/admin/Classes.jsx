@@ -446,7 +446,9 @@ export default function AdminClasses() {
       </div>
 
       <FilterBar
-        filters={buildFilters(applied, filterData, {}, lang).filter((f) => ['curriculumid','divisionid','stageid','classid','sectionid'].includes(f.key))}
+        filters={buildFilters(applied, filterData, {
+            classid: { options: [{ value: 'All', label: t('allClasses', lang) }, ...Array.from(new Map(classes.map(c => [c.classid, c])).values()).map(c => ({ value: String(c.classid), label: lang === 'ar' ? (c.classname || c.classname_en) : (c.classname_en || c.classname) }))] },
+          }, lang).filter((f) => ['curriculumid','divisionid','stageid','classid','sectionid'].includes(f.key))}
         appliedFilters={applied}
 
         onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
