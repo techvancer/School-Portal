@@ -43,7 +43,7 @@ export default function SupervisorDashboard() {
             const stageIds = [...new Set((supStages || []).map(r => String(r.stageid)).filter(Boolean))];
 
             const classStages = stageIds.length
-                ? await rest('classes_stages_tbl', { stageid: `in.(${stageIds})`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,stageid' })
+                ? await rest('sections_classes_tbl', { stageid: `in.(${stageIds})`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,stageid' })
                 : [];
             let supervisedClassIds = [...new Set((classStages || []).map(r => String(r.classid)))];
 

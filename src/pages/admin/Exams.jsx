@@ -163,7 +163,7 @@ export default function AdminExams() {
         setDetailStatsLoading(true);
         (async () => {
             try {
-                const base = { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, examid: `eq.${row.examid}`, classid: `eq.${row.classid}`, sectionid: `eq.${row.sectionid}`, subjectid: `eq.${row.subjectid}` };
+                const base = { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, examid: `eq.${row.examid}`, classid: `eq.${row.classid}`, sectionid: `eq.${row.sectionid}`, subjectid: `eq.${row.subjectid}`, attempt_number: `eq.${row.attempt_number || 1}` };
                 const [answers, questions] = await Promise.all([
                     rest('studentanswers_tbl', { ...base, select: 'studentid,studentmark,questionid' }).catch(() => []),
                     rest('questions_exams_employee_subjects_sections_tbl', { ...base, select: 'questionid,question_marks' }).catch(() => []),

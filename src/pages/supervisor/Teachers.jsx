@@ -7,7 +7,7 @@ import FilterBar from '../../components/FilterBar';
 import { useSortable } from '../../lib/useSortable';
 import SortableTh from '../../components/SortableTh';
 import { useAuth } from '../../context/AuthContext';
-import { rest, dbQuery } from '../../lib/supabaseClient';
+import { rest } from '../../lib/supabaseClient';
 import { useToast } from '../../context/ToastContext';
 import { useFilterData } from '../../lib/useFilterData';
 import { buildFilters, EMPTY_FILTER } from '../../lib/helpers';
@@ -31,49 +31,85 @@ export default function SupervisorTeachers() {
     const [activeSearch, setActiveSearch] = useState(null);
     const [applied, setApplied] = useState({ ...EMPTY_FILTER });
 
-    const fetchData = useCallback(async () => {
+    const fetchData = useCallback(async (filters = {}) => {
         if (!user) return;
         try {
             setLoading(true);
-            const [supStages, classStages, empTypes, empList, assignments, classRows, sectionRows, subjectRows, answerRows] = await Promise.all([
-                dbQuery(`employees_types_stages_tbl?employeeid=eq.${user.employeeid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}&select=*`),
-                dbQuery('classes_stages_tbl?select=*'),
-                dbQuery('employees_types_tbl?select=*'),
-                dbQuery(`employee_tbl?schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}&select=*`),
-                dbQuery(`employees_sections_subjects_classes_semisters_curriculums_tbl?schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}&select=*`),
-                dbQuery('classes_tbl?select=*'),
-                dbQuery('sections_tbl?select=*'),
-                dbQuery('subjects_tbl?select=*'),
-                dbQuery(`studentanswers_tbl?schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}&select=employeeid,studentmark,classid,sectionid,subjectid`),
+            const sid = user.schoolid;
+            const bid = user.branchid;
+
+            // Phase 1: get supervisor's assigned stages
+            const supStages = await rest('employees_types_stages_tbl', {
+                employeeid: `eq.${user.employeeid}`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'stageid'
+            }).catch(() => []);
+            const stageIds = [...new Set((supStages || []).map(r => String(r.stageid)).filter(Boolean))];
+            if (stageIds.length === 0) { setTeachers([]); setLoading(false); return; }
+
+            // Apply stage filter if selected
+            const stageParam = filters.stageid && filters.stageid !== 'All'
+                ? { stageid: `eq.${filters.stageid}` }
+                : { stageid: `in.(${stageIds})` };
+
+            // Phase 2: get classes in those stages + lookup tables in parallel
+            const [classStages, empTypes, classRows, sectionRows, subjectRows] = await Promise.all([
+                rest('sections_classes_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, ...stageParam, select: 'classid,stageid' }).catch(() => []),
+                rest('employees_types_tbl', { select: '*' }).catch(() => []),
+                rest('classes_tbl', { select: '*' }).catch(() => []),
+                rest('sections_tbl', { select: '*' }).catch(() => []),
+                rest('subjects_tbl', { select: '*' }).catch(() => []),
             ]);
 
-            const stageIds = [...new Set((supStages || []).map(r => String(r.stageid)).filter(Boolean))];
-            const supervisedClassIds = new Set(
-                (classStages || [])
-                    .filter(r => stageIds.length === 0 || stageIds.includes(String(r.stageid)))
-                    .map(r => String(r.classid))
-            );
-            // Build classid → stageid lookup so the stageid filter works even when
-            // the assignments table has no stageid column.
             const ctsMap = {};
             (classStages || []).forEach(r => { ctsMap[String(r.classid)] = String(r.stageid); });
             setClassToStage(ctsMap);
-            const teacherIds = new Set((empTypes || []).filter(r => String(r.typeid) === '1').map(r => String(r.employeeid)));
-            const supervisedAssignments = (assignments || []).filter(r => supervisedClassIds.has(String(r.classid)) && teacherIds.has(String(r.employeeid)));
+
+            let classIds = [...new Set((classStages || []).map(r => String(r.classid)))];
+            if (filters.classid && filters.classid !== 'All') {
+                classIds = classIds.filter(id => id === String(filters.classid));
+            }
+            if (classIds.length === 0) { setTeachers([]); setLoading(false); return; }
+
+            // Phase 3: get teacher assignments scoped to supervised classes
+            const assignParams = {
+                schoolid: `eq.${sid}`, branchid: `eq.${bid}`,
+                classid: `in.(${classIds})`,
+                select: 'employeeid,classid,sectionid,subjectid,curriculumid,divisionid,semisterid,stageid',
+                ...(filters.sectionid    && filters.sectionid    !== 'All' ? { sectionid:    `eq.${filters.sectionid}` }    : {}),
+                ...(filters.subjectid    && filters.subjectid    !== 'All' ? { subjectid:    `eq.${filters.subjectid}` }    : {}),
+                ...(filters.curriculumid && filters.curriculumid !== 'All' ? { curriculumid: `eq.${filters.curriculumid}` } : {}),
+                ...(filters.divisionid   && filters.divisionid   !== 'All' ? { divisionid:   `eq.${filters.divisionid}` }   : {}),
+                ...(filters.semisterid   && filters.semisterid   !== 'All' ? { semisterid:   `eq.${filters.semisterid}` }   : {}),
+            };
+            const assignments = await rest('employees_sections_subjects_classes_semisters_curriculums_tbl', assignParams).catch(() => []);
+
+            // Filter to type=1 (teachers) only
+            const teacherTypeIds = new Set((empTypes || []).filter(r => String(r.typeid) === '1').map(r => String(r.employeeid)));
+            const supervisedAssignments = (assignments || []).filter(r => teacherTypeIds.has(String(r.employeeid)));
             const supervisedTeacherIds = [...new Set(supervisedAssignments.map(r => String(r.employeeid)))];
 
+            if (supervisedTeacherIds.length === 0) { setTeachers([]); setLoading(false); return; }
+
+            // Phase 4: fetch employee records for those teacher IDs
+            const empList = await rest('employee_tbl', {
+                schoolid: `eq.${sid}`, branchid: `eq.${bid}`,
+                employeeid: `in.(${supervisedTeacherIds})`, select: '*'
+            }).catch(() => []);
+
+            // Build assignments map
             const aMap = {};
             supervisedAssignments.forEach(a => {
-                if (!aMap[String(a.employeeid)]) aMap[String(a.employeeid)] = [];
-                aMap[String(a.employeeid)].push(a);
+                const key = String(a.employeeid);
+                if (!aMap[key]) aMap[key] = [];
+                aMap[key].push(a);
             });
             setAssignmentsMap(aMap);
 
             const result = supervisedTeacherIds.map(employeeid => {
                 const emp = (empList || []).find(e => String(e.employeeid) === String(employeeid));
-                const assigns = supervisedAssignments.filter(a => String(a.employeeid) === String(employeeid));
+                if (!emp) return null;
+                const assigns = aMap[employeeid] || [];
                 const classLabels = [...new Set(assigns.map(a => {
-                    const cl = (classRows || []).find(c => String(c.classid) === String(a.classid));
+                    const cl  = (classRows   || []).find(c => String(c.classid)   === String(a.classid));
                     const sec = (sectionRows || []).find(s => String(s.sectionid) === String(a.sectionid));
                     return `${getField(cl, 'classname', 'classname_en', lang) || cl?.classname || a.classid} - ${getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname || a.sectionid}`;
                 }))];
@@ -81,10 +117,7 @@ export default function SupervisorTeachers() {
                     const sub = (subjectRows || []).find(s => String(s.subjectid) === String(a.subjectid));
                     return getField(sub, 'subjectname', 'Subjectname_en', lang) || sub?.['Subjectname_en'] || sub?.subjectname || `Subject ${a.subjectid}`;
                 }))];
-                const scores = (answerRows || []).filter(r => String(r.employeeid) === String(employeeid)).map(r => Number(r.studentmark) || 0);
-                const avgMarks = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-
-                return { ...emp, classLabels, subjects, avgMarks };
+                return { ...emp, classLabels, subjects };
             }).filter(Boolean);
 
             setTeachers(result);
@@ -97,8 +130,6 @@ export default function SupervisorTeachers() {
         }
     }, [user, addToast, lang]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
-
     useEffect(() => {
         if (!user || hasRunFromState.current) return;
         hasRunFromState.current = true;
@@ -106,10 +137,12 @@ export default function SupervisorTeachers() {
         const fromUrl = {};
         const state = location.state || {};
         keys.forEach(k => { if (state[k]) fromUrl[k] = state[k]; });
-        const merged = Object.keys(fromUrl).length > 0 ? { ...applied, ...fromUrl } : applied;
-        if (Object.keys(fromUrl).length > 0) setApplied(merged);
-        setHasApplied(true);
-        fetchData();
+        if (Object.keys(fromUrl).length > 0) {
+            const merged = { ...applied, ...fromUrl };
+            setApplied(merged);
+            setHasApplied(true);
+            fetchData(merged);
+        }
     }, [fetchData, user]);
 
     const filterData = useMemo(() => ({
@@ -180,8 +213,8 @@ export default function SupervisorTeachers() {
                 filters={buildFilters(applied, filterData, {}, lang).filter(f => !['examid', 'semisterid'].includes(f.key))}
                 appliedFilters={applied}
                 scRows={filterData.scRows}
-                onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(); }}
-                onReset={vals => { setApplied(vals); setHasApplied(false); setTeachers([]); }}
+                onApply={vals => { const merged = { ...applied, ...vals }; setApplied(merged); setHasApplied(true); fetchData(merged); }}
+                onReset={vals => { const merged = { ...applied, ...vals }; setApplied(merged); setHasApplied(false); setTeachers([]); setSearch(''); }}
             />
 
             <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 flex items-center gap-3">

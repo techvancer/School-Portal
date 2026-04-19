@@ -42,7 +42,7 @@ export default function SupervisorExams() {
                 ? `stageid=eq.${filters.stageid}`
                 : stageIds.length ? `stageid=in.(${stageIds.join(',')})` : '';
 
-            const classStages = await dbQuery(`classes_stages_tbl?select=classid,stageid&schoolid=eq.${sid}&branchid=eq.${bid}${stageFilter ? '&' + stageFilter : ''}`);
+            const classStages = await dbQuery(`sections_classes_tbl?select=classid,stageid&schoolid=eq.${sid}&branchid=eq.${bid}${stageFilter ? '&' + stageFilter : ''}`);
             let supervisedClassIds = [...new Set((classStages || []).map(r => String(r.classid)))];
             if (filters.classid && filters.classid !== 'All') {
                 supervisedClassIds = supervisedClassIds.filter(id => id === String(filters.classid));

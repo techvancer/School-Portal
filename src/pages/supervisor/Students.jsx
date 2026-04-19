@@ -49,7 +49,7 @@ export default function SupervisorStudents() {
                 ? { stageid: `eq.${filters.stageid}` }
                 : stageIds.length ? { stageid: `in.(${stageIds})` } : {};
 
-            const classStages = await rest('classes_stages_tbl', {
+            const classStages = await rest('sections_classes_tbl', {
                 schoolid: `eq.${sid}`, branchid: `eq.${bid}`, ...stageParam, select: 'classid,stageid'
             });
 
