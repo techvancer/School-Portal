@@ -57,8 +57,10 @@ export async function fetchGradeDistribution({
             ? rows.filter(r => classids.includes(r.classid))
             : rows;
 
-        // Filter to completed exams only when provided
-        if (completedExamIds && completedExamIds.length > 0) {
+        // Filter to the provided exam IDs. An empty array means the caller found no
+        // matching exams (e.g. teacher has no exams), so return empty immediately.
+        if (completedExamIds !== undefined) {
+            if (completedExamIds.length === 0) return [];
             const completedSet = new Set(completedExamIds.map(String));
             filtered = filtered.filter(r => completedSet.has(String(r.examid)));
         }

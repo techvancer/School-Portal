@@ -46,22 +46,26 @@ export default function AdminSubjects() {
     if (!user) return;
     try {
       setLoading(true);
-      const [subList, assignments, classesTbl, sectionsTbl] = await Promise.all([
+      const [subList, assignments, classAssignments, classesTbl, sectionsTbl] = await Promise.all([
         dbQuery('subjects_tbl?select=*&order=subjectid.asc'),
         rest('employees_sections_subjects_classes_semisters_curriculums_tbl', { select: 'subjectid,classid,sectionid' }),
+        rest('subjects_classes_tbl', { select: 'subjectid' }),
         rest('classes_tbl', { select: 'classid,classname' }),
         rest('sections_tbl', { select: 'sectionid,sectionname' }),
       ]);
+      const teacherAssignedIds = new Set((assignments || []).map(r => r.subjectid));
+      const classAssignedIds   = new Set((classAssignments || []).map(r => r.subjectid));
       const enriched = subList.map((subject) => {
-        const rows = assignments.filter((row) => row.subjectid === subject.subjectid);
+        const rows = (assignments || []).filter((row) => row.subjectid === subject.subjectid);
         const classIds = [...new Set(rows.map(r => r.classid))];
         const labels = [...new Map(rows.map((row) => {
           const classRow = classesTbl.find((c) => c.classid === row.classid);
           const sectionRow = sectionsTbl.find((s) => s.sectionid === row.sectionid);
-           const label = `${t('class', lang)} ${classRow?.classname || row.classid}${sectionRow ? ` - ${sectionRow.sectionname}` : ''}`;
+          const label = `${t('class', lang)} ${classRow?.classname || row.classid}${sectionRow ? ` - ${sectionRow.sectionname}` : ''}`;
           return [label, label];
         })).values()];
-        return { ...subject, classes: labels, classIds };
+        const isAssigned = teacherAssignedIds.has(subject.subjectid) || classAssignedIds.has(subject.subjectid);
+        return { ...subject, classes: labels, classIds, isAssigned };
       });
       setSubjects(enriched);
     } catch (e) {
@@ -256,6 +260,10 @@ export default function AdminSubjects() {
   };
 
   const handleDelete = async (subject) => {
+    if (subject.isAssigned) {
+      addToast('Cannot delete: this subject is assigned to a class or teacher.', 'error');
+      return;
+    }
     try {
       await remove('subjects_tbl', subject.subjectid, 'subjectid');
       addToast(t('subjectDeleted', lang), 'success');
@@ -306,6 +314,7 @@ export default function AdminSubjects() {
           { key: 'stageid',      label: t('stage', lang),      value: applied.stageid      ?? 'All', options: filterData.stages     || [] },
           { key: 'classid',      label: t('class', lang),      value: applied.classid      ?? 'All', options: filterData.classes    || [] },
         ]}
+        scRows={filterData.scRows}
         onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(); }}
         onReset={() => { setApplied({ curriculumid: 'All', divisionid: 'All', stageid: 'All', classid: 'All' }); setHasApplied(false); setSubjects([]); }}
       />
@@ -373,7 +382,7 @@ export default function AdminSubjects() {
                         <span className="text-xs text-[#64748b]" dir="rtl">{subject.subjectname || '—'}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-center"><div className="flex items-center justify-center gap-2"><button onClick={() => openEdit(subject)} className="p-1.5 text-[#1d4ed8] hover:bg-blue-50 rounded-lg"><Edit2 className="h-4 w-4" /></button><button onClick={() => setConfirm({ open: true, action: 'delete', subject })} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="py-4 px-6 text-center"><div className="flex items-center justify-center gap-2"><button title="Edit" onClick={() => openEdit(subject)} className="p-1.5 text-[#1d4ed8] hover:bg-blue-50 rounded-lg"><Edit2 className="h-4 w-4" /></button><button onClick={() => !subject.isAssigned && setConfirm({ open: true, action: 'delete', subject })} disabled={subject.isAssigned} title={subject.isAssigned ? 'Cannot delete: subject is assigned to a class or teacher' : undefined} className={`p-1.5 rounded-lg transition-colors ${subject.isAssigned ? 'text-[#cbd5e1] cursor-not-allowed' : 'text-red-500 hover:bg-red-50'}`}><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 )
               ))}

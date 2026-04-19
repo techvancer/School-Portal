@@ -74,7 +74,7 @@ export default function AdminStudents() {
 
       const [stuList, stuScRows, clTbl, secRows, stgRows, divRows, curRows] = await Promise.all([
         rest('students_tbl', { select: 'studentid,studentfirstname_ar,studentfirstname_en,studentfathersname_ar,studentfathersname_en,studentgrandfathersname_ar,studentgrandfathersname_en,studentsurname_ar,studentsurname_en,studentemail,studentmobile' }),
-        rest('students_sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'studentid,classid,sectionid,stageid,divisionid,curriculumid' }),
+        rest('students_sections_classes_tbl', { select: 'studentid,classid,sectionid,stageid,divisionid,curriculumid,schoolid,branchid' }),
         cachedCl  ? Promise.resolve(cachedCl)  : rest('classes_tbl', { select: 'classid,classname,classname_en' }),
         cachedSec ? Promise.resolve(cachedSec) : rest('sections_tbl', { select: 'sectionid,sectionname,sectionname_en' }),
         cachedStg ? Promise.resolve(cachedStg) : rest('stages_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'stageid,stagename,stagename_en' }),
@@ -88,29 +88,32 @@ export default function AdminStudents() {
       if (!cachedDiv) setCached(`lookup:divisions_tbl`, divRows);
       if (!cachedCur) setCached(`lookup:curriculums_tbl`, curRows);
       const merged = stuList.map((s) => {
-        const sc = stuScRows.find((x) => x.studentid === s.studentid);
-        if (!sc) return null;
-        const cl = clTbl.find((c) => c.classid === sc.classid);
-        const sec = secRows.find((x) => x.sectionid === sc.sectionid);
-        const stg = stgRows.find((x) => x.stageid === sc.stageid);
-        const div = divRows.find((x) => x.divisionid === sc.divisionid);
-        const cur = curRows.find((x) => x.curriculumid === sc.curriculumid);
+        // Prefer enrollment row that matches current school/branch; fall back to any row
+        const sc = stuScRows.find((x) => x.studentid === s.studentid && String(x.schoolid) === String(user.schoolid) && String(x.branchid) === String(user.branchid))
+               || stuScRows.find((x) => x.studentid === s.studentid);
+        // Keep unenrolled students visible so admins can re-assign them
+        const cl  = sc ? clTbl.find((c) => c.classid    === sc.classid)    : null;
+        const sec = sc ? secRows.find((x) => x.sectionid === sc.sectionid) : null;
+        const stg = sc ? stgRows.find((x) => x.stageid   === sc.stageid)   : null;
+        const div = sc ? divRows.find((x) => x.divisionid  === sc.divisionid)  : null;
+        const cur = sc ? curRows.find((x) => x.curriculumid === sc.curriculumid) : null;
         return {
           ...s,
-          classid: sc.classid,
-          sectionid: sc.sectionid,
-          stageid: sc.stageid,
-          curriculumid: sc.curriculumid,
-          divisionid: sc.divisionid,
-          classname: getField(cl, 'classname', 'classname_en', lang) || cl?.classname || '?',
-          sectionname: getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname || '?',
-          fullName: _getStudentName(s, lang) || '—',
-          stageName: getField(stg, 'stagename', 'stagename_en', lang) || '—',
-          stagename: getField(stg, 'stagename', 'stagename_en', lang) || '—',
-          divisionname: getField(div, 'divisionname', 'divisionname_en', lang) || div?.divisionname || sc.divisionid || '—',
-          curriculumname: getField(cur, 'curriculumname', 'curriculumname_en', lang) || cur?.curriculumname || sc.curriculumid || '—',
+          classid:      sc?.classid      ?? null,
+          sectionid:    sc?.sectionid    ?? null,
+          stageid:      sc?.stageid      ?? null,
+          curriculumid: sc?.curriculumid ?? null,
+          divisionid:   sc?.divisionid   ?? null,
+          classname:    sc ? (getField(cl,  'classname',   'classname_en',   lang) || cl?.classname   || '?') : '— Not Enrolled —',
+          sectionname:  sc ? (getField(sec, 'sectionname', 'sectionname_en', lang) || sec?.sectionname || '?') : '—',
+          fullName:     _getStudentName(s, lang) || '—',
+          stageName:    sc ? (getField(stg, 'stagename',   'stagename_en',   lang) || '—') : '—',
+          stagename:    sc ? (getField(stg, 'stagename',   'stagename_en',   lang) || '—') : '—',
+          divisionname: sc ? (getField(div, 'divisionname','divisionname_en',lang) || div?.divisionname || sc.divisionid || '—') : '—',
+          curriculumname: sc ? (getField(cur, 'curriculumname','curriculumname_en',lang) || cur?.curriculumname || sc.curriculumid || '—') : '—',
+          _unenrolled: !sc,
         };
-      }).filter(Boolean);
+      });
       setStudents(merged);
       setClasses(clTbl);
       setSections(secRows);
@@ -155,7 +158,6 @@ export default function AdminStudents() {
 
   async function createStudent(payload) {
     const newStudentId = await nextId('students_tbl', 'studentid');
-    const fullNameEn = [payload.studentfirstname_en, payload.studentfathersname_en, payload.studentsurname_en].filter(Boolean).join(' ') || _getStudentName(payload, lang) || '';
     const [newStu] = await insert('students_tbl', {
       studentid: newStudentId,
       studentfirstname_ar: payload.studentfirstname_ar || null,
@@ -174,16 +176,22 @@ export default function AdminStudents() {
       parentmobile: payload.parentmobile || null,
       parent_position: payload.parent_position || null,
     });
-    await insert('students_sections_classes_tbl', {
-      studentid: newStu.studentid,
-      classid: Number.parseInt(payload.classid, 10),
-      sectionid: Number.parseInt(payload.sectionid, 10),
-      stageid: Number.parseInt(payload.stageid, 10),
-      schoolid: user.schoolid,
-      branchid: user.branchid,
-      divisionid: Number.parseInt(payload.divisionid || user.divisionid || 1, 10),
-      curriculumid: Number.parseInt(payload.curriculumid || user.curriculumid || 1, 10),
-    });
+    try {
+      await insert('students_sections_classes_tbl', {
+        studentid: newStu.studentid,
+        classid: Number.parseInt(payload.classid, 10),
+        sectionid: Number.parseInt(payload.sectionid, 10),
+        stageid: Number.parseInt(payload.stageid, 10),
+        schoolid: user.schoolid,
+        branchid: user.branchid,
+        divisionid: Number.parseInt(payload.divisionid || user.divisionid || 1, 10),
+        curriculumid: Number.parseInt(payload.curriculumid || user.curriculumid || 1, 10),
+      });
+    } catch (enrollErr) {
+      // Roll back: remove the student row so no orphan is left in students_tbl
+      await dbQuery(`students_tbl?studentid=eq.${newStu.studentid}`, 'DELETE').catch(() => {});
+      throw enrollErr;
+    }
   }
 
   const handleCreate = async () => {
@@ -382,6 +390,15 @@ export default function AdminStudents() {
   const handleDelete = async (student) => {
     setDeleteModal({ open: false, student: null });
     try {
+      // Pre-check: block deletion if the student has any exam or answer records
+      const [examRows, answerRows] = await Promise.all([
+        rest('students_exams_employees_section_subjects_classes_semisters_cur', { studentid: `eq.${student.studentid}`, select: 'studentid', limit: 1 }).catch(() => []),
+        rest('studentanswers_tbl', { studentid: `eq.${student.studentid}`, select: 'studentid', limit: 1 }).catch(() => []),
+      ]);
+      if (examRows.length > 0 || answerRows.length > 0) {
+        addToast('Cannot delete: this student has exam records. Remove their exam data first.', 'error');
+        return;
+      }
       await dbQuery(`students_sections_classes_tbl?studentid=eq.${student.studentid}`, 'DELETE');
       await remove('students_tbl', student.studentid, 'studentid');
       addToast(t('deleteSuccess', lang), 'success');
@@ -431,7 +448,7 @@ export default function AdminStudents() {
       <FilterBar
         filters={buildFilters(applied, filterData, {}, lang).filter(f => f.key !== 'examid' && f.key !== 'semisterid' && f.key !== 'subjectid')}
         appliedFilters={applied}
-
+        scRows={filterData.scRows}
         onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(); }}
         onReset={(vals) => { setApplied(vals); setHasApplied(false); setStudents([]); }}
       />
@@ -479,7 +496,7 @@ export default function AdminStudents() {
                     <td className="px-4 py-3 text-center text-xs text-[#475569]">{s.curriculumname}</td>
                     <td className="px-4 py-3 text-center text-sm text-[#475569]">{s.studentemail || '—'}</td>
                     <td className="px-4 py-3 text-center text-sm text-[#475569]">{s.studentmobile || '—'}</td>
-                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button onClick={() => navigate(`/admin/students/edit/${s.studentid}`, { state: { student: s } })} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button onClick={() => setDeleteModal({ open: true, student: s })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button title="Edit" onClick={() => navigate(`/admin/students/edit/${s.studentid}`, { state: { student: s } })} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button title="Delete" onClick={() => setDeleteModal({ open: true, student: s })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 )
               ))}
@@ -548,7 +565,7 @@ export default function AdminStudents() {
                 >
                   Download Excel
                 </button>
-                <button onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
+                <button title="Dismiss" onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
                   <X className="h-4 w-4" />
                 </button>
               </div>

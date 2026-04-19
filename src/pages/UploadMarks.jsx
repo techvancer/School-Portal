@@ -79,7 +79,7 @@ export default function UploadMarks() {
                     classid: `eq.${classid}`,
                     sectionid: `eq.${sectionid}`,
                     subjectid: `eq.${subjectid}`,
-                    select: 'questionid,question_marks',
+                    select: 'questionid,question_marks,status',
                     order: 'questionid.asc',
                 }),
                 rest('students_sections_classes_tbl', {
@@ -111,12 +111,34 @@ export default function UploadMarks() {
             const section = sectionRows[0];
             const subject = subjectRows[0];
             const assignment = assignmentRows?.[0];
-            const enrolledStudents = [...new Map(
-                sectionStudentRows
-                    .map((row) => studentRows.find((student) => student.studentid === row.studentid))
-                    .filter(Boolean)
-                    .map(s => [s.studentid, s])
-            ).values()];
+
+            const examStatusFromQ = (questionRows?.[0]?.status || '').toLowerCase();
+            const isFinalized = ['marked', 'completed', 'inprogress', 'submitted'].includes(examStatusFromQ);
+
+            let enrolledStudents;
+            if (isFinalized) {
+                const examEnrolledRows = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
+                    examid: `eq.${examid}`,
+                    employeeid: `eq.${user.employeeid}`,
+                    classid: `eq.${classid}`,
+                    sectionid: `eq.${sectionid}`,
+                    subjectid: `eq.${subjectid}`,
+                    select: 'studentid',
+                });
+                enrolledStudents = [...new Map(
+                    examEnrolledRows
+                        .map((row) => studentRows.find((student) => student.studentid === row.studentid))
+                        .filter(Boolean)
+                        .map(s => [s.studentid, s])
+                ).values()];
+            } else {
+                enrolledStudents = [...new Map(
+                    sectionStudentRows
+                        .map((row) => studentRows.find((student) => student.studentid === row.studentid))
+                        .filter(Boolean)
+                        .map(s => [s.studentid, s])
+                ).values()];
+            }
             // Deduplicate by questionid (DB may return duplicate rows)
             const questionObjs = [...new Map(questionRows.map(r => [r.questionid, {
                 questionid: r.questionid,
@@ -215,6 +237,18 @@ export default function UploadMarks() {
 
         // Step 1: Ensure every student is enrolled in the exam before inserting answers.
         // This satisfies the FK constraint fk_studentmark_studexam on studentanswers_tbl.
+        const examStatusRow = await rest('questions_exams_employee_subjects_sections_tbl', {
+            examid: `eq.${meta.examid}`,
+            employeeid: `eq.${user.employeeid}`,
+            classid: `eq.${meta.classid}`,
+            sectionid: `eq.${meta.sectionid}`,
+            subjectid: `eq.${meta.subjectid}`,
+            select: 'status',
+            limit: 1,
+        }).catch(() => []);
+        const examStatus = (examStatusRow?.[0]?.status || '').toLowerCase();
+        const examIsFinalized = ['marked', 'completed', 'inprogress', 'submitted'].includes(examStatus);
+
         for (const student of students) {
             const existing = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
                 studentid: `eq.${student.studentid}`,
@@ -225,7 +259,7 @@ export default function UploadMarks() {
                 subjectid: `eq.${meta.subjectid}`,
                 select: 'studentid',
             });
-            if (!existing?.length) {
+            if (!existing?.length && !examIsFinalized) {
                 await insert('students_exams_employees_section_subjects_classes_semisters_cur', {
                     studentid: student.studentid,
                     examid: meta.examid,
@@ -426,6 +460,7 @@ export default function UploadMarks() {
         <div className="space-y-6 pb-12">
             <div className="flex items-center gap-4">
                 <button
+                    title="Back to Exams"
                     onClick={() => navigate('/exams')}
                     className="h-9 w-9 rounded-full flex items-center justify-center border border-[#e2e8f0] hover:bg-slate-100 transition-all"
                 >

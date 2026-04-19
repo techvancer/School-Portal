@@ -375,8 +375,8 @@ export default function AdminSupervisors() {
                                         <td className="px-4 py-3 text-center text-sm text-[#475569]">{s.curriculumname}</td>
                                         <td className="px-4 py-3 text-center"><span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-1 rounded-full uppercase">{s.stageName}</span></td>
                                         <td className="px-4 py-3 text-center"><div className="flex items-center gap-2">
-                                            <button onClick={() => { setSelectedSup(s); setEditData({ employeename: s.employeename || '', employeename_en: getField(s, 'employeename', 'employeename_en', lang) || '', employeeemail: s.employeeemail || '', employeemobile: s.employeemobile || '', stageid: String(s.stageid || '') }); setIsEditOpen(true); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
-                                            <button onClick={() => { setSelectedSup(s); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
+                                            <button title="Edit" onClick={() => { setSelectedSup(s); setEditData({ employeename: s.employeename || '', employeename_en: getField(s, 'employeename', 'employeename_en', lang) || '', employeeemail: s.employeeemail || '', employeemobile: s.employeemobile || '', stageid: String(s.stageid || '') }); setIsEditOpen(true); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
+                                            <button title="Delete" onClick={() => { setSelectedSup(s); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
                                         </div></td>
                                     </tr>
                                 )

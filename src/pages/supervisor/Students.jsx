@@ -155,6 +155,7 @@ export default function SupervisorStudents() {
             </div>
             <FilterBar
                 filters={buildFilters(applied, baseFilterData, {}, lang).filter(f => !['examid','subjectid','semisterid'].includes(f.key))}
+                scRows={baseFilterData.scRows}
                 onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
                 onReset={vals => { setApplied(vals); setHasApplied(false); setStudents([]); setSearch(''); }}
             />

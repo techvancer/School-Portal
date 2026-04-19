@@ -436,7 +436,9 @@ export default function AdminEmployees() {
       employeename_en: employee.employeename_en || '',
       employeeemail: employee.employeeemail || '',
       employeemobile: employee.employeemobile || '',
-      typeid: String(employee.typeid || ''),
+      // Default to the first available type if the employee has no type assigned —
+      // prevents the dropdown from visually showing a type while state remains empty.
+      typeid: String(employee.typeid || types[0]?.typeid || ''),
       divisionid: String(employee.divisionid || ''),
       curriculumid: String(employee.curriculumid || ''),
       notes: employee.notes || '',
@@ -445,8 +447,13 @@ export default function AdminEmployees() {
 
   const handleUpdate = async () => {
     if (!selectedEmp) return;
-    if (!editData.employeename.trim() || !editData.employeename_en.trim() || !editData.employeeemail.trim() || !editData.typeid) {
-      addToast('Please fill in all required fields.', 'warning');
+    const missingFields = [];
+    if (!editData.employeename.trim()) missingFields.push('Arabic Name');
+    if (!editData.employeename_en.trim() && !editData.employeename.trim()) missingFields.push('English Name');
+    if (!editData.employeeemail.trim()) missingFields.push('Email');
+    if (!editData.typeid) missingFields.push('Role');
+    if (missingFields.length > 0) {
+      addToast(`Please fill in: ${missingFields.join(', ')}.`, 'warning');
       return;
     }
     if (editData.employeemobile && !isTenDigitPhone(editData.employeemobile)) {
@@ -457,7 +464,7 @@ export default function AdminEmployees() {
     try {
       await update('employee_tbl', selectedEmp.employeeid, 'employeeid', {
         employeename: editData.employeename.trim(),
-        employeename_en: editData.employeename_en.trim(),
+        employeename_en: (editData.employeename_en.trim() || editData.employeename.trim()),
         employeeemail: editData.employeeemail.trim(),
         employeemobile: editData.employeemobile || null,
         divisionid: editData.divisionid ? Number.parseInt(editData.divisionid, 10) : null,
@@ -481,6 +488,15 @@ export default function AdminEmployees() {
   const handleDelete = async (employee) => {
     setDeleteModal({ show: false, employee: null });
     try {
+      // Pre-check: block if employee has active class assignments or exam records
+      const [assignRows, examRows] = await Promise.all([
+        rest('employees_sections_subjects_classes_semisters_curriculums_tbl', { employeeid: `eq.${employee.employeeid}`, select: 'employeeid', limit: 1 }).catch(() => []),
+        rest('questions_exams_employee_subjects_sections_tbl', { employeeid: `eq.${employee.employeeid}`, select: 'employeeid', limit: 1 }).catch(() => []),
+      ]);
+      if (assignRows.length > 0 || examRows.length > 0) {
+        addToast('Cannot delete: this employee has active assignments or exam records. Remove those first.', 'error');
+        return;
+      }
       await dbQuery(`employees_types_tbl?employeeid=eq.${employee.employeeid}`, 'DELETE');
       await remove('employee_tbl', employee.employeeid, 'employeeid');
 
@@ -704,7 +720,7 @@ export default function AdminEmployees() {
                     <td className="px-4 py-3 text-center text-sm text-[#475569]"><EditableCell employee={employee} field="employeemobile" display={employee.employeemobile} /></td>
                     <td className="px-4 py-3 text-center text-sm text-[#475569]">{employee.divisionname}</td>
                     <td className="px-4 py-3 text-center text-sm text-[#475569]">{employee.curriculumname}</td>
-                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button onClick={() => openEdit(employee)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button onClick={() => setDeleteModal({ show: true, employee })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button title="Edit" onClick={() => openEdit(employee)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button title="Delete" onClick={() => setDeleteModal({ show: true, employee })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 )
               ))}
@@ -742,7 +758,7 @@ export default function AdminEmployees() {
                 >
                   Download Excel
                 </button>
-                <button onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
+                <button title="Dismiss" onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
                   <X className="h-4 w-4" />
                 </button>
               </div>

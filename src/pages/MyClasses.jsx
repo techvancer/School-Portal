@@ -351,7 +351,7 @@ function MarksTab({ section, user, students }) {
                 rest('questions_exams_employee_subjects_sections_tbl', {
                     employeeid: `eq.${user.employeeid}`, classid: `eq.${section.classid}`,
                     sectionid: `eq.${section.sectionid}`,
-                    status: `in.(marked,completed)`, select: 'examid',
+                    status: `in.(marked,submitted,completed,inprogress)`, select: 'examid',
                 }).catch(() => []),
             ]);
             setExamTblCache(examTbl); // cache for language relabeling

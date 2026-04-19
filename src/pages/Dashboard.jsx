@@ -289,7 +289,7 @@ export default function Dashboard() {
             {/* Change 2: Universal filter order */}
             <FilterBar
                 filters={buildFilters(applied, filterData, {}, lang)}
-                
+                scRows={filterData.scRows}
                 appliedFilters={applied}onApply={handleApply}
                 onReset={handleReset}
                 onChange={setDraftFilters}

@@ -34,6 +34,8 @@ export default function Login() {
 
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [changingPassword, setChangingPassword] = useState(false);
 
     useEffect(() => {
@@ -92,26 +94,38 @@ export default function Login() {
                             <label className="block text-sm font-medium text-[#374151] mb-2">
                                 New Password
                             </label>
-                            <input
-                                type="password"
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                className="block w-full h-12 px-4 bg-white border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1d4ed8] transition-all"
-                                placeholder={isAr ? "أدخل كلمة المرور الجديدة" : "Enter new password"}
-                            />
+                            <div className="relative">
+                                <input
+                                    type={showNewPassword ? 'text' : 'password'}
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    className="block w-full h-12 px-4 pr-11 bg-white border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1d4ed8] transition-all"
+                                    placeholder={isAr ? "أدخل كلمة المرور الجديدة" : "Enter new password"}
+                                />
+                                <button type="button" onClick={() => setShowNewPassword(p => !p)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#475569] transition-colors">
+                                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
                         </div>
 
                         <div>
                             <label className="block text-sm font-medium text-[#374151] mb-2">
                                 Confirm Password
                             </label>
-                            <input
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="block w-full h-12 px-4 bg-white border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1d4ed8] transition-all"
-                                placeholder={isAr ? "تأكيد كلمة المرور الجديدة" : "Confirm new password"}
-                            />
+                            <div className="relative">
+                                <input
+                                    type={showConfirmPassword ? 'text' : 'password'}
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    className="block w-full h-12 px-4 pr-11 bg-white border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1d4ed8] transition-all"
+                                    placeholder={isAr ? "تأكيد كلمة المرور الجديدة" : "Confirm new password"}
+                                />
+                                <button type="button" onClick={() => setShowConfirmPassword(p => !p)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#475569] transition-colors">
+                                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
                         </div>
 
                         <button

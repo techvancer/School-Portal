@@ -105,7 +105,7 @@ export default function TeacherExamUpload() {
                     sectionid: `eq.${sectionid}`,
                     subjectid: `eq.${subjectid}`,
                     attempt_number: `eq.${latestAttempt}`,
-                    select: 'questionid,question_marks,question_type,exam_type,question_answer,num_choices',
+                    select: 'questionid,question_marks,question_type,exam_type,question_answer,num_choices,status',
                     order: 'questionid.asc',
                 }),
                 rest('students_sections_classes_tbl', {
@@ -138,11 +138,29 @@ export default function TeacherExamUpload() {
             const subject = subjectRows[0];
             const assignment = assignmentRows?.[0];
 
-            // Fetch actively enrolled students + ANY student who has historical answers for this exact exam attempt
-            const enrolledIds = new Set(sectionStudentRows.map(r => r.studentid));
-            existingAnswers.forEach(ans => enrolledIds.add(ans.studentid));
-            
-            const uniqueIds = Array.from(enrolledIds);
+            const examStatusFromQ = (questionRows?.[0]?.status || '').toLowerCase();
+            const isFinalized = ['marked', 'completed', 'inprogress', 'submitted'].includes(examStatusFromQ);
+
+            let sourceIds;
+            if (isFinalized) {
+                const examEnrolledRows = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
+                    examid: `eq.${examid}`,
+                    employeeid: `eq.${user.employeeid}`,
+                    classid: `eq.${classid}`,
+                    sectionid: `eq.${sectionid}`,
+                    subjectid: `eq.${subjectid}`,
+                    select: 'studentid',
+                });
+                sourceIds = new Set([
+                    ...examEnrolledRows.map(r => r.studentid),
+                    ...existingAnswers.map(a => a.studentid),
+                ]);
+            } else {
+                sourceIds = new Set(sectionStudentRows.map(r => r.studentid));
+                existingAnswers.forEach(ans => sourceIds.add(ans.studentid));
+            }
+
+            const uniqueIds = Array.from(sourceIds);
             const studentRows = uniqueIds.length
                 ? await rest('students_tbl', { studentid: `in.(${uniqueIds.join(',')})`, select: '*' })
                 : [];
@@ -264,6 +282,18 @@ export default function TeacherExamUpload() {
         let saved = 0;
 
         // Step 1: Ensure every student is enrolled in the exam before inserting answers.
+        const examStatusRow = await rest('questions_exams_employee_subjects_sections_tbl', {
+            examid: `eq.${meta.examid}`,
+            employeeid: `eq.${user.employeeid}`,
+            classid: `eq.${meta.classid}`,
+            sectionid: `eq.${meta.sectionid}`,
+            subjectid: `eq.${meta.subjectid}`,
+            select: 'status',
+            limit: 1,
+        }).catch(() => []);
+        const examStatus = (examStatusRow?.[0]?.status || '').toLowerCase();
+        const examIsFinalized = ['marked', 'completed', 'inprogress', 'submitted'].includes(examStatus);
+
         for (const student of students) {
             const existing = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
                 studentid: `eq.${student.studentid}`,
@@ -274,7 +304,7 @@ export default function TeacherExamUpload() {
                 subjectid: `eq.${meta.subjectid}`,
                 select: 'studentid',
             });
-            if (!existing?.length) {
+            if (!existing?.length && !examIsFinalized) {
                 await insert('students_exams_employees_section_subjects_classes_semisters_cur', {
                     studentid: student.studentid,
                     examid: meta.examid,
@@ -909,7 +939,7 @@ export default function TeacherExamUpload() {
                             >
                                 Download Excel
                             </button>
-                            <button onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
+                            <button title="Dismiss" onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
                                 <X className="h-4 w-4" />
                             </button>
                         </div>

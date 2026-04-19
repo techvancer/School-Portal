@@ -138,8 +138,8 @@ export default function AdminUserAccounts() {
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <div className="flex justify-end gap-2">
-                                                <button onClick={() => addToast('Edit user profile', 'info')} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100 transition-colors"><Edit2 className="h-4 w-4" /></button>
-                                                <button onClick={() => addToast('User account deleted', 'error')} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-100 transition-colors"><Trash2 className="h-4 w-4" /></button>
+                                                <button title="Edit" onClick={() => addToast('Edit user profile', 'info')} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100 transition-colors"><Edit2 className="h-4 w-4" /></button>
+                                                <button title="Delete" onClick={() => addToast('User account deleted', 'error')} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-100 transition-colors"><Trash2 className="h-4 w-4" /></button>
                                             </div>
                                         </td>
                                     </motion.tr>

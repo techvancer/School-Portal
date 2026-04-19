@@ -132,6 +132,7 @@ export default function Students() {
                 filters={filterFields.map(f => ({ ...f, required: true }))}
                 requiredFields={REQUIRED_KEYS}
                 appliedFilters={applied}
+                scRows={filterData.scRows}
                 onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
                 onReset={(vals) => { setApplied(vals); setStudents([]); setHasApplied(false); setSearch(''); }}
             />

@@ -18,7 +18,7 @@ export function useFilterData(user, lang) {
     const [data, setData] = useState({
         curriculums: [], divisions: [],
         stages: [], classes: [], sections: [], subjects: [],
-        exams: [], semisters: [], types: [], employees: [], students: []
+        exams: [], semisters: [], types: [], employees: [], students: [], scRows: []
     });
 
     const rawDataRef = useRef(null);
@@ -59,7 +59,7 @@ export function useFilterData(user, lang) {
                     rest('curriculums_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'curriculumid,curriculumname_en,curriculumname' }).catch(() => []),
                 ]);
 
-                let raw = { role, eid, examTbl, semTbl, typesTbl, divTbl, curTbl, stageRows: [], clRows: [], secRows: [], subRows: [], filteredSems: [], empNames: [], teacherExamIds: new Set(), teacherCurIds: [], teacherDivIds: [], activeStages: [], subTbl: [], empTbl: [], teacherTypes: [] };
+                let raw = { role, eid, examTbl, semTbl, typesTbl, divTbl, curTbl, stageRows: [], clRows: [], secRows: [], subRows: [], filteredSems: [], empNames: [], teacherExamIds: new Set(), teacherCurIds: [], teacherDivIds: [], activeStages: [], subTbl: [], empTbl: [], teacherTypes: [], scRows: [] };
 
                 if (role === 'Teacher') {
                     const assignments = await rest('employees_sections_subjects_classes_semisters_curriculums_tbl', { employeeid: `eq.${eid}`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,sectionid,subjectid,stageid,semisterid,curriculumid,divisionid' });
@@ -78,7 +78,7 @@ export function useFilterData(user, lang) {
 
                     const teacherExamRows = await rest('questions_exams_employee_subjects_sections_tbl', {
                         employeeid: `eq.${eid}`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`,
-                        status: `in.(marked,completed)`, select: 'examid',
+                        status: `in.(marked,submitted,completed,inprogress)`, select: 'examid',
                     }).catch(() => []);
 
                     raw.filteredSems = semTbl.filter(s => semIds.includes(s.semisterid));
@@ -86,6 +86,7 @@ export function useFilterData(user, lang) {
                     raw.teacherDivIds = [...new Set(assignments.map(a => a.divisionid).filter(Boolean))];
                     raw.teacherExamIds = new Set((teacherExamRows || []).map(r => String(r.examid)));
                     raw.clRows = clRows; raw.secRows = secRows; raw.subRows = subRows; raw.stageRows = stageRows;
+                    raw.scRows = assignments; // has classid,sectionid,stageid,curriculumid,divisionid
                 }
                 else if (role === 'Supervisor') {
                     const supStages = await rest('employees_types_stages_tbl', { employeeid: `eq.${eid}`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'stageid' });
@@ -96,32 +97,37 @@ export function useFilterData(user, lang) {
 
                     const assignedClasses = classIds.length ? await rest('employees_sections_subjects_classes_semisters_curriculums_tbl', { classid: `in.(${classIds})`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,sectionid,subjectid,semisterid,employeeid,curriculumid,divisionid' }) : [];
 
-                    const activeClassIds   = [...new Set(assignedClasses.map(r => r.classid))];
+                    // Use ALL supervised classIds (from stages) for the class dropdown,
+                    // not just those with teacher assignments — newly created classes with
+                    // no assignments yet must still be visible.
                     const activeSectionIds = [...new Set(assignedClasses.map(r => r.sectionid))];
                     const activeSubjectIds = [...new Set(assignedClasses.map(r => r.subjectid))];
                     const activeSemIds     = [...new Set(assignedClasses.map(r => r.semisterid))];
                     const activeEmpIds     = [...new Set(assignedClasses.map(r => r.employeeid))];
 
-                    const [clRows, secRows, subNames, stageRows, empNames] = await Promise.all([
-                        activeClassIds.length   ? rest('classes_tbl',  { classid:   `in.(${activeClassIds})`,   select: 'classid,classname_en,classname' }) : [],
+                    const [clRows, secRows, subNames, stageRows, empNames, scRows] = await Promise.all([
+                        classIds.length         ? rest('classes_tbl',  { classid:   `in.(${classIds})`,         select: 'classid,classname_en,classname' }) : [],
                         activeSectionIds.length ? rest('sections_tbl', { sectionid: `in.(${activeSectionIds})`, select: 'sectionid,sectionname_en,sectionname' }) : [],
                         activeSubjectIds.length ? rest('subjects_tbl', { subjectid: `in.(${activeSubjectIds})`, select: 'subjectid,Subjectname_en,subjectname' }) : [],
                         stageIds.length         ? rest('stages_tbl',   { stageid:   `in.(${stageIds})`,         select: 'stageid,stagename_en,stagename' }) : [],
                         activeEmpIds.length     ? rest('employee_tbl', { employeeid:`in.(${activeEmpIds})`,     select: 'employeeid,employeename_en,employeename' }) : [],
+                        classIds.length         ? rest('sections_classes_tbl', { classid: `in.(${classIds})`, schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,sectionid,stageid,divisionid,curriculumid' }).catch(() => []) : Promise.resolve([]),
                     ]);
 
                     raw.filteredSems = semTbl.filter(s => activeSemIds.includes(s.semisterid));
                     raw.clRows = clRows; raw.secRows = secRows; raw.subRows = subNames; raw.stageRows = stageRows; raw.empNames = empNames;
+                    raw.scRows = scRows;
                 }
                 else {
                     // ADMIN / GM
-                    const [assignRows, stuScRows, stageTbl, subTbl, empTbl, teacherTypes] = await Promise.all([
+                    const [assignRows, stuScRows, stageTbl, subTbl, empTbl, teacherTypes, scRows] = await Promise.all([
                         rest('employees_sections_subjects_classes_semisters_curriculums_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,sectionid,subjectid,stageid,semisterid,employeeid,curriculumid,divisionid' }),
                         rest('students_sections_classes_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,sectionid,stageid' }),
                         rest('stages_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'stageid,stagename_en,stagename' }),
                         rest('subjects_tbl', { select: 'subjectid,Subjectname_en,subjectname' }),
                         rest('employee_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'employeeid,employeename_en,employeename' }),
                         rest('employees_types_tbl', { typeid: 'eq.1', select: 'employeeid' }),
+                        rest('sections_classes_tbl', { schoolid: `eq.${sid}`, branchid: `eq.${bid}`, select: 'classid,sectionid,stageid,divisionid,curriculumid' }).catch(() => []),
                     ]);
 
                     const activeClassIds   = [...new Set([...assignRows.map(r => r.classid),   ...stuScRows.map(r => r.classid)])];
@@ -137,6 +143,7 @@ export function useFilterData(user, lang) {
                     raw.activeStages = uniq((stageTbl || []).filter(r => activeStageIds.includes(r.stageid)), 'stageid');
                     raw.filteredSems = semTbl.filter(s => activeSemIds.includes(s.semisterid));
                     raw.clRows = clRows; raw.secRows = secRows; raw.subTbl = subTbl; raw.empTbl = empTbl; raw.teacherTypes = teacherTypes;
+                    raw.scRows = scRows;
                 }
                 
                 return raw;
@@ -185,6 +192,7 @@ export function useFilterData(user, lang) {
                     types:    [...opt(t('allTypes', lang) || 'All Types'),     ...raw.typesTbl.map(r => ({ value: String(r.typeid), label: getField(r, 'typename', 'typename_en', lang) }))],
                     employees:[{ value: 'All', label: t('allEmployees', lang) }, { value: String(raw.eid), label: user.name }],
                     students: [...opt(t('allStudents', lang))],
+                    scRows:   raw.scRows || [],
                 });
             } else if (raw.role === 'Supervisor') {
                 setData({
@@ -198,6 +206,7 @@ export function useFilterData(user, lang) {
                     semisters:[...opt(t('allSemesters', lang)), ...uniq(raw.filteredSems.length ? raw.filteredSems : raw.semTbl, 'semisterid').map(r => ({ value: String(r.semisterid), label: getField(r, 'semistername', 'semistername_en', lang) }))],
                     types:    [...opt(t('allTypes', lang) || 'All Types'),     ...raw.typesTbl.map(r => ({ value: String(r.typeid), label: getField(r, 'typename', 'typename_en', lang) }))],
                     students: [...opt(t('allStudents', lang))],
+                    scRows:   raw.scRows || [],
                 });
             } else {
                 setData({
@@ -211,6 +220,7 @@ export function useFilterData(user, lang) {
                     types:    [...opt(t('allTypes', lang) || 'All Types'),     ...raw.typesTbl.map(r                  => ({ value: String(r.typeid),    label: getField(r, 'typename', 'typename_en', lang) }))],
                     employees:[...opt(t('teachers', lang) || 'All Teachers'), ...raw.empTbl.filter(e => (raw.teacherTypes||[]).some(t => t.employeeid === e.employeeid)).map(r => ({ value: String(r.employeeid), label: getField(r, 'employeename', 'employeename_en', lang) }))],
                     students: [...opt(t('allStudents', lang))],
+                    scRows:   raw.scRows || [],
                 });
             }
         };

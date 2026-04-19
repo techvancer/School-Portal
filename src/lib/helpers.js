@@ -95,13 +95,15 @@ export function calcGrade(pct) {
 
 // ─── CHANGE 2: Universal filter order helper ─────────────────────────────
 // Returns filters array in mandatory order: Curriculum → Division → Branch → Stage → Class → Section → Subject → Exam → Semester
-export function buildFilters(applied, filterData, extras = {}, lang = 'en') {
+// Pass scRows (from filterData.scRows) to FilterBar directly — cascade filtering is done there
+// based on the live draft state, not the stale applied state here.
+export function buildFilters(applied, filterData, extras = {}, lang = 'en', _rows = null) {
     // disabled is NOT set here — FilterBar computes it from its own draft state
     return [
         { key: 'curriculumid', label: t('curriculum', lang), value: applied.curriculumid ?? 'All', options: filterData.curriculums || [{ value: 'All', label: t('allCurriculums', lang) }], ...extras.curriculumid },
         { key: 'divisionid',   label: t('division', lang),   value: applied.divisionid   ?? 'All', options: filterData.divisions  || [{ value: 'All', label: t('allDivisions', lang) }],   ...extras.divisionid },
         { key: 'stageid',      label: t('stage', lang),      value: applied.stageid      ?? 'All', options: filterData.stages     || [{ value: 'All', label: t('allStages', lang) }],      ...extras.stageid },
-        { key: 'classid',      label: t('class', lang),    value: applied.classid      ?? 'All', options: filterData.classes    || [{ value: 'All', label: t('allClasses', lang) }],     ...extras.classid },
+        { key: 'classid',      label: t('class', lang),      value: applied.classid      ?? 'All', options: filterData.classes    || [{ value: 'All', label: t('allClasses', lang) }],     ...extras.classid },
         { key: 'sectionid',    label: t('section', lang),    value: applied.sectionid    ?? 'All', options: filterData.sections   || [{ value: 'All', label: t('allSections', lang) }],    ...extras.sectionid },
         { key: 'subjectid',    label: t('subject', lang),    value: applied.subjectid    ?? 'All', options: filterData.subjects   || [{ value: 'All', label: t('allSubjects', lang) }],    ...extras.subjectid },
         { key: 'examid',       label: t('exam', lang),       value: applied.examid       ?? 'All', options: filterData.exams      || [{ value: 'All', label: t('allExams', lang) }],       ...extras.examid },

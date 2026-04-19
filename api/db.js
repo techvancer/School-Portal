@@ -164,6 +164,28 @@ export default async function handler(req, res) {
         return res.status(response.status).json({ error: e.message || 'Update failed' });
       }
       const text = await response.text();
+
+      // If the employee's email changed, sync it to Supabase Auth so they can log in with the new email
+      if (table === 'employee_tbl' && data?.employeeemail) {
+        try {
+          const empRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/employee_tbl?${idField}=eq.${id}&select=auth_user_id`,
+            { headers: serviceHeaders({ Accept: 'application/json' }) }
+          );
+          const empRows = empRes.ok ? await empRes.json() : [];
+          const authUserId = empRows[0]?.auth_user_id;
+          if (authUserId) {
+            await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authUserId}`, {
+              method: 'PUT',
+              headers: serviceHeaders(),
+              body: JSON.stringify({ email: data.employeeemail, email_confirm: true }),
+            });
+          }
+        } catch (_) {
+          // Auth sync failure is non-fatal — DB record is already updated
+        }
+      }
+
       return res.status(200).json(text ? JSON.parse(text) : { ok: true });
 
     // ── REMOVE ─────────────────────────────────────────────────────────────────

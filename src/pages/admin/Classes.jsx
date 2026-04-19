@@ -31,6 +31,7 @@ export default function AdminClasses() {
   const [stages, setStages] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [curriculums, setCurriculums] = useState([]);
+  const [classStages, setClassStages] = useState([]); // classid → stageid valid combos
   const [loading, setLoading] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
   const [search, setSearch] = useState('');
@@ -49,7 +50,7 @@ export default function AdminClasses() {
     if (!user) return;
     try {
       setLoading(true);
-      const [scRows, classRows, secRows, stageRows, stuScRows, divRows, curRows] = await Promise.all([
+      const [scRows, classRows, secRows, stageRows, stuScRows, divRows, curRows, csRows] = await Promise.all([
         rest('sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
         rest('classes_tbl', { select: '*' }),
         rest('sections_tbl', { select: '*' }),
@@ -57,6 +58,7 @@ export default function AdminClasses() {
         rest('students_sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'classid,sectionid,stageid,divisionid,curriculumid,studentid' }),
         rest('divisions_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }).catch(() => []),
         rest('curriculums_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }).catch(() => []),
+        rest('classes_stages_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'classid,stageid' }).catch(() => []),
       ]);
       const merged = scRows.map((sc) => {
         const cl = classRows.find((c) => c.classid === sc.classid);
@@ -83,6 +85,7 @@ export default function AdminClasses() {
       setStages([...new Map(stageRows.map((s) => [s.stageid, s])).values()]);
       setDivisions(divRows || []);
       setCurriculums(curRows || []);
+      setClassStages(csRows || []);
     } catch (e) {
       addToast(getErrorMessage(e, 'general'), 'error');
     } finally {
@@ -113,6 +116,15 @@ export default function AdminClasses() {
     const mcur = applied.curriculumid === 'All' || String(row.curriculumid) === applied.curriculumid;
     return ms && mc && msec && mst && mdiv && mcur;
   }));
+
+  // Returns the valid stages for a given classid (using classes_stages_tbl).
+  // If classStages hasn't loaded yet or has no entries, falls back to all stages.
+  const stagesForClass = (classid) => {
+    if (!classid || classStages.length === 0) return stages;
+    const valid = classStages.filter(cs => String(cs.classid) === String(classid)).map(cs => String(cs.stageid));
+    if (valid.length === 0) return stages; // no mapping found — show all (let DB validate)
+    return stages.filter(s => valid.includes(String(s.stageid)));
+  };
 
   const isClassFormValid = Boolean(classForm.classid && classForm.sectionid && classForm.stageid && classForm.divisionid && classForm.curriculumid);
 
@@ -145,6 +157,19 @@ export default function AdminClasses() {
       addToast('This class/section/stage/division/curriculum combination already exists.', 'error');
       return;
     }
+    // Validate class+stage against classes_stages_tbl before hitting the DB
+    if (classStages.length > 0) {
+      const validStageIds = classStages
+        .filter(cs => String(cs.classid) === String(classForm.classid))
+        .map(cs => String(cs.stageid));
+      if (validStageIds.length > 0 && !validStageIds.includes(String(classForm.stageid))) {
+        const validNames = stagesForClass(classForm.classid)
+          .map(s => (lang === 'ar' ? s.stagename : s.stagename_en || s.stagename))
+          .join(', ');
+        addToast(`This class is not configured for the selected stage. Valid stages: ${validNames || 'none'}.`, 'error');
+        return;
+      }
+    }
     setIsLoading(true);
     try {
       await createClassRow(classForm);
@@ -153,10 +178,11 @@ export default function AdminClasses() {
       setClassForm(EMPTY_CLASS);
       fetchData();
     } catch (err) {
-      if (err.message?.includes('409') || err.message?.includes('duplicate') || err.message?.includes('unique') || err.message?.includes('already exists')) {
-        addToast('This class/section combination already exists.', 'error');
+      const msg = (err.message || '').toLowerCase();
+      if (msg.includes('409') || msg.includes('duplicate') || msg.includes('unique') || msg.includes('already exists') || msg.includes('23505')) {
+        addToast('This class/section/stage/division/curriculum combination already exists.', 'error');
       } else {
-        addToast(getErrorMessage(err, 'general'), 'error');
+        addToast(err.message || 'Failed to create class. Please try again.', 'error');
       }
     } finally {
       setIsLoading(false);
@@ -367,15 +393,33 @@ export default function AdminClasses() {
       addToast('Please fill in all required fields.', 'warning');
       return;
     }
+    // Validate class+stage combination
+    if (classStages.length > 0) {
+      const validStageIds = classStages
+        .filter(cs => String(cs.classid) === String(editForm.classid))
+        .map(cs => String(cs.stageid));
+      if (validStageIds.length > 0 && !validStageIds.includes(String(editForm.stageid))) {
+        const validNames = stagesForClass(editForm.classid)
+          .map(s => (lang === 'ar' ? s.stagename : s.stagename_en || s.stagename))
+          .join(', ');
+        addToast(`This class is not configured for the selected stage. Valid stages: ${validNames || 'none'}.`, 'error');
+        return;
+      }
+    }
     setIsLoading(true);
     try {
-      await dbQuery(`sections_classes_tbl?classid=eq.${selectedRow.classid}&sectionid=eq.${selectedRow.sectionid}&stageid=eq.${selectedRow.stageid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`, 'DELETE');
+      await dbQuery(`sections_classes_tbl?classid=eq.${selectedRow.classid}&sectionid=eq.${selectedRow.sectionid}&stageid=eq.${selectedRow.stageid}&divisionid=eq.${selectedRow.divisionid}&curriculumid=eq.${selectedRow.curriculumid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`, 'DELETE');
       await createClassRow(editForm);
       addToast(t('savingChanges', lang), 'success');
       setSelectedRow(null);
       fetchData();
     } catch (err) {
-      addToast(getErrorMessage(err, 'general'), 'error');
+      const msg = (err.message || '').toLowerCase();
+      if (msg.includes('409') || msg.includes('duplicate') || msg.includes('unique') || msg.includes('23505')) {
+        addToast('This class/section/stage/division/curriculum combination already exists.', 'error');
+      } else {
+        addToast(err.message || 'Failed to save. Please try again.', 'error');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -388,7 +432,7 @@ export default function AdminClasses() {
       return;
     }
     try {
-      const res = await dbQuery(`sections_classes_tbl?classid=eq.${row.classid}&sectionid=eq.${row.sectionid}&stageid=eq.${row.stageid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`, 'DELETE');
+      const res = await dbQuery(`sections_classes_tbl?classid=eq.${row.classid}&sectionid=eq.${row.sectionid}&stageid=eq.${row.stageid}&divisionid=eq.${row.divisionid}&curriculumid=eq.${row.curriculumid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}`, 'DELETE');
       if (!res.ok) {
         const body = {};
         const msg = '';
@@ -450,7 +494,7 @@ export default function AdminClasses() {
             classid: { options: [{ value: 'All', label: t('allClasses', lang) }, ...Array.from(new Map(classes.map(c => [c.classid, c])).values()).map(c => ({ value: String(c.classid), label: lang === 'ar' ? (c.classname || c.classname_en) : (c.classname_en || c.classname) }))] },
           }, lang).filter((f) => ['curriculumid','divisionid','stageid','classid','sectionid'].includes(f.key))}
         appliedFilters={applied}
-
+        scRows={filterData.scRows}
         onApply={(vals) => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
         onReset={(vals) => { setApplied({ classid: 'All', sectionid: 'All', stageid: 'All', curriculumid: 'All', divisionid: 'All' }); setHasApplied(false); setRows([]); }}
       />
@@ -477,9 +521,9 @@ export default function AdminClasses() {
             <tbody className="divide-y divide-[#e2e8f0]">
               {showAddRow && (
                 <tr className="bg-blue-50/50 align-top">
-                  <td className="px-4 py-3 text-center min-w-[220px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('class', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.classid} onChange={(e) => setClassForm((p) => ({ ...p, classid: e.target.value }))}><option value="">{t('selectClass', lang)}</option>{classes.map((c) => <option key={c.classid} value={c.classid}>{lang === 'ar' ? (c.classname || c.classid) : (c.classname_en || c.classname || c.classid)}</option>)}</select></td>
+                  <td className="px-4 py-3 text-center min-w-[220px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('class', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.classid} onChange={(e) => setClassForm((p) => ({ ...p, classid: e.target.value, stageid: '' }))}><option value="">{t('selectClass', lang)}</option>{classes.map((c) => <option key={c.classid} value={c.classid}>{lang === 'ar' ? (c.classname || c.classid) : (c.classname_en || c.classname || c.classid)}</option>)}</select></td>
                   <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('section', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.sectionid} onChange={(e) => setClassForm((p) => ({ ...p, sectionid: e.target.value }))}><option value="">{t('selectSection', lang)}</option>{sections.map((section) => <option key={section.sectionid} value={section.sectionid}>{getField(section, 'sectionname', 'sectionname_en', lang)}</option>)}</select></td>
-                  <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('stage', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.stageid} onChange={(e) => setClassForm((p) => ({ ...p, stageid: e.target.value }))}><option value="">{t('selectStage', lang)}</option>{stages.map((stage) => <option key={stage.stageid} value={stage.stageid}>{getField(stage, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
+                  <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('stage', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.stageid} onChange={(e) => setClassForm((p) => ({ ...p, stageid: e.target.value }))}><option value="">{t('selectStage', lang)}</option>{stagesForClass(classForm.classid).map((stage) => <option key={stage.stageid} value={stage.stageid}>{getField(stage, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
                   <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('division', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.divisionid} onChange={(e) => setClassForm((p) => ({ ...p, divisionid: e.target.value }))}><option value="">{t('selectDivision', lang) || 'Select division'}</option>{divisions.map((division) => <option key={division.divisionid} value={division.divisionid}>{getField(division, 'divisionname', 'divisionname_en', lang)}</option>)}</select></td>
                   <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('curriculum', lang)} <span className="text-red-500">*</span></label><select required className="input-field h-9" value={classForm.curriculumid} onChange={(e) => setClassForm((p) => ({ ...p, curriculumid: e.target.value }))}><option value="">{t('selectCurriculum', lang) || 'Select curriculum'}</option>{curriculums.map((curriculum) => <option key={curriculum.curriculumid} value={curriculum.curriculumid}>{getField(curriculum, 'curriculumname', 'curriculumname_en', lang)}</option>)}</select></td>
                   <td className="px-4 py-3 text-center text-sm text-[#94a3b8]">—</td>
@@ -495,9 +539,9 @@ export default function AdminClasses() {
               ) : filtered.map((row) => (
                 selectedRow && selectedRow.classid === row.classid && selectedRow.sectionid === row.sectionid && selectedRow.stageid === row.stageid && selectedRow.divisionid === row.divisionid && selectedRow.curriculumid === row.curriculumid ? (
                   <tr key={`${row.classid}-${row.sectionid}-${row.stageid}-${row.divisionid}-${row.curriculumid}`} className="bg-amber-50/50 align-top">
-                    <td className="px-4 py-3 text-center min-w-[220px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('class', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.classid} onChange={(e) => setEditForm((p) => ({ ...p, classid: e.target.value }))}>{classes.map((c) => <option key={c.classid} value={c.classid}>{lang === 'ar' ? (c.classname || c.classid) : (c.classname_en || c.classname || c.classid)}</option>)}</select></td>
+                    <td className="px-4 py-3 text-center min-w-[220px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('class', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.classid} onChange={(e) => setEditForm((p) => ({ ...p, classid: e.target.value, stageid: '' }))}>{classes.map((c) => <option key={c.classid} value={c.classid}>{lang === 'ar' ? (c.classname || c.classid) : (c.classname_en || c.classname || c.classid)}</option>)}</select></td>
                     <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('section', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.sectionid} onChange={(e) => setEditForm((p) => ({ ...p, sectionid: e.target.value }))}>{sections.map((section) => <option key={section.sectionid} value={section.sectionid}>{getField(section, 'sectionname', 'sectionname_en', lang)}</option>)}</select></td>
-                    <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('stage', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.stageid} onChange={(e) => setEditForm((p) => ({ ...p, stageid: e.target.value }))}>{stages.map((stage) => <option key={stage.stageid} value={stage.stageid}>{getField(stage, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
+                    <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('stage', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.stageid} onChange={(e) => setEditForm((p) => ({ ...p, stageid: e.target.value }))}><option value="">{t('selectStage', lang)}</option>{stagesForClass(editForm.classid).map((stage) => <option key={stage.stageid} value={stage.stageid}>{getField(stage, 'stagename', 'stagename_en', lang)}</option>)}</select></td>
                     <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('division', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.divisionid} onChange={(e) => setEditForm((p) => ({ ...p, divisionid: e.target.value }))}>{divisions.map((division) => <option key={division.divisionid} value={division.divisionid}>{getField(division, 'divisionname', 'divisionname_en', lang)}</option>)}</select></td>
                     <td className="px-4 py-3 text-center min-w-[170px]"><label className="text-xs font-bold text-[#64748b] mb-1 block">{t('curriculum', lang)} <span className="text-red-500">*</span></label><select className="input-field h-9" value={editForm.curriculumid} onChange={(e) => setEditForm((p) => ({ ...p, curriculumid: e.target.value }))}>{curriculums.map((curriculum) => <option key={curriculum.curriculumid} value={curriculum.curriculumid}>{getField(curriculum, 'curriculumname', 'curriculumname_en', lang)}</option>)}</select></td>
                     <td className="px-4 py-3 text-center text-sm">{row.studentCount}</td>
@@ -511,7 +555,7 @@ export default function AdminClasses() {
                     <td className="px-4 py-3 text-center text-sm">{row.divisionname}</td>
                     <td className="px-4 py-3 text-center text-sm">{row.curriculumname}</td>
                     <td className="px-4 py-3 text-center text-sm">{row.studentCount}</td>
-                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button onClick={() => openEdit(row)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button onClick={() => setDeleteModal({ show: true, row })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="px-4 py-3 text-center"><div className="flex items-center gap-2"><button title="Edit" onClick={() => openEdit(row)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-50"><Edit2 className="h-4 w-4" /></button><button title="Delete" onClick={() => setDeleteModal({ show: true, row })} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-50"><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 )
               ))}
@@ -548,7 +592,7 @@ export default function AdminClasses() {
                 >
                   Download Excel
                 </button>
-                <button onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
+                <button title="Dismiss" onClick={() => setCsvErrorModal(p => ({ ...p, show: false }))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-100">
                   <X className="h-4 w-4" />
                 </button>
               </div>

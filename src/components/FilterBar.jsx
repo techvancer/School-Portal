@@ -8,24 +8,56 @@
  *   onReset: (filterValues: object) => void
  *   requiredFields?: string[] — keys that are required (alternative to per-filter required)
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SlidersHorizontal, RotateCcw, X, ChevronDown, AlertCircle } from 'lucide-react';
 import { useLang } from '../context/LanguageContext';
 import { t } from '../lib/langHelper';
 
-export default function FilterBar({ filters = [], onApply, onReset, onChange, requiredFields = [], appliedFilters = null }) {
+// Cascade upstream map: each key lists the upstream keys that must be set to limit its options.
+const CASCADE_UPSTREAM = {
+    divisionid: ['curriculumid'],
+    stageid:    ['curriculumid', 'divisionid'],
+    classid:    ['curriculumid', 'divisionid', 'stageid'],
+    sectionid:  ['curriculumid', 'divisionid', 'stageid', 'classid'],
+};
+
+export default function FilterBar({ filters = [], onApply, onReset, onChange, requiredFields = [], appliedFilters = null, scRows = null }) {
     const { lang } = useLang();
     const [draft, setDraft] = useState(() =>
         Object.fromEntries(filters.map(f => [f.key, f.value ?? 'All']))
     );
+    // Track keys the user has explicitly set to 'All' so the useEffect auto-select never overrides them.
+    const userExplicitAll = useRef(new Set());
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const [showErrorBanner, setShowErrorBanner] = useState(false);
 
+    // Returns cascade-filtered options for a filter based on current draft selections.
+    const getCascadedOpts = (f, currentDraft) => {
+        const upstreamKeys = CASCADE_UPSTREAM[f.key];
+        if (!upstreamKeys || !scRows || !scRows.length) return f.options;
+        const anyApplied = upstreamKeys.some(k => currentDraft[k] && currentDraft[k] !== 'All');
+        if (!anyApplied) return f.options;
+        const validRows = scRows.filter(r =>
+            upstreamKeys.every(k => {
+                const v = currentDraft[k];
+                return !v || v === 'All' || String(r[k]) === String(v);
+            })
+        );
+        const validIds = new Set(validRows.map(r => String(r[f.key])));
+        return f.options.filter(o => o.value === 'All' || validIds.has(String(o.value)));
+    };
+
     // Cascade lock: a filter is locked if any PREVIOUS filter in the array
-    // has more than 1 real option (i.e. it has choices) but hasn't been selected yet
+    // has more than 1 real option (i.e. it has choices) but hasn't been selected yet.
+    // A filter with `lockedUnless` bypasses cascade logic and is locked until all
+    // specified keys have a non-'All' value selected.
     const isLocked = (key) => {
-        const idx = filters.findIndex(f => f.key === key);
+        const f = filters.find(ff => ff.key === key);
+        if (f?.lockedUnless) {
+            return f.lockedUnless.some(k => !draft[k] || draft[k] === 'All');
+        }
+        const idx = filters.findIndex(ff => ff.key === key);
         if (idx <= 0) return false;
         for (let i = 0; i < idx; i++) {
             const prev = filters[i];
@@ -54,7 +86,7 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                     const prevReal = (prev.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
                     return prevReal.length > 1 && (!next[prev.key] || next[prev.key] === 'All');
                 });
-                if (realOpts.length === 1 && (!next[f.key] || next[f.key] === 'All') && !lockedInNext) {
+                if (realOpts.length === 1 && (!next[f.key] || next[f.key] === 'All') && !lockedInNext && !userExplicitAll.current.has(f.key)) {
                     next[f.key] = String(realOpts[0].value);
                 }
                 // NOTE: intentionally NOT syncing parent 'All' back into draft on options change —
@@ -82,7 +114,7 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                 const prevReal = (prev.options || []).filter(o => o.value !== 'All' && o.value !== undefined && o.value !== '');
                 return prevReal.length > 1 && (!result[prev.key] || result[prev.key] === 'All');
             });
-            if (realOpts.length === 1 && (!result[f.key] || result[f.key] === 'All') && !locked) {
+            if (realOpts.length === 1 && (!result[f.key] || result[f.key] === 'All') && !locked && !userExplicitAll.current.has(f.key)) {
                 result[f.key] = String(realOpts[0].value);
             }
         });
@@ -90,6 +122,12 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
     };
 
     const handleChange = (key, val) => {
+        // Track explicit 'All' selections so auto-select never overrides them.
+        if (val === 'All') {
+            userExplicitAll.current.add(key);
+        } else {
+            userExplicitAll.current.delete(key);
+        }
         // Reset all filters that come AFTER the changed one in the displayed order.
         // Using the filters array position (not a hardcoded hierarchy) so pages that
         // display filters in a custom order (e.g. Division before Curriculum) don't
@@ -97,7 +135,27 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
         const idx = filters.findIndex(f => f.key === key);
         let newDraft = { ...draft, [key]: val };
         if (idx >= 0) {
-            filters.slice(idx + 1).forEach(f => { newDraft[f.key] = 'All'; });
+            // Clear explicit-All tracking for downstream filters since they're being reset.
+            filters.slice(idx + 1).forEach(f => {
+                userExplicitAll.current.delete(f.key);
+                newDraft[f.key] = 'All';
+            });
+        }
+        // If scRows cascade is active, also invalidate any downstream value that is no
+        // longer present in the cascaded options (e.g. a previously selected class that
+        // doesn't exist under the newly chosen curriculum).
+        if (scRows && scRows.length) {
+            filters.forEach(f => {
+                if (!CASCADE_UPSTREAM[f.key]) return;
+                const currentVal = newDraft[f.key];
+                if (!currentVal || currentVal === 'All') return;
+                const cascaded = getCascadedOpts(f, newDraft);
+                const stillValid = cascaded.some(o => String(o.value) === String(currentVal));
+                if (!stillValid) {
+                    userExplicitAll.current.delete(f.key);
+                    newDraft[f.key] = 'All';
+                }
+            });
         }
         // Pass skipKey so the user's explicit choice (including 'All') is never overridden.
         newDraft = cascadeAutoSelect(newDraft, key);
@@ -128,6 +186,10 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
     };
 
     const handleReset = () => {
+        // After reset every filter is explicitly 'All' — block auto-select for all of them.
+        // Keys are removed from this set when the user selects a real value upstream,
+        // which cascades and clears downstream keys too.
+        userExplicitAll.current = new Set(filters.map(f => f.key));
         const reset = Object.fromEntries(filters.map(f => [f.key, 'All']));
         setDraft(reset);
         if (onChange) onChange(reset);
@@ -161,7 +223,7 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                     {lang === 'ar' ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill in all required fields'}
                     <span className="font-bold text-red-500 mx-1">*</span>
                     {lang === 'ar' ? 'قبل تطبيق الفلتر.' : 'before applying the filter.'}
-                    <button onClick={() => setShowErrorBanner(false)} className="mx-auto text-red-400 hover:text-red-600">
+                    <button title="Dismiss" onClick={() => setShowErrorBanner(false)} className="mx-auto text-red-400 hover:text-red-600">
                         <X className="h-4 w-4" />
                     </button>
                 </div>
@@ -207,8 +269,12 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                                 }`}
                                 style={selectStyle}
                             >
-                                {f.options.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                {getCascadedOpts(f, draft).map(opt => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.value === 'All' && f.required
+                                            ? (lang === 'ar' ? `— اختر ${f.label} —` : `— Select ${f.label} —`)
+                                            : opt.label}
+                                    </option>
                                 ))}
                             </select>
                         </div>
@@ -260,7 +326,7 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                                     <span className="text-red-500 font-bold">*</span> {lang === 'ar' ? 'مطلوب' : 'Required'}
                                 </span>
                             )}
-                            <button onClick={() => setDrawerOpen(false)}
+                            <button title="Close" onClick={() => setDrawerOpen(false)}
                                 className="p-1.5 rounded-lg hover:bg-slate-100 text-[#64748b]">
                                 <X className="h-5 w-5" />
                             </button>
@@ -285,8 +351,12 @@ export default function FilterBar({ filters = [], onApply, onReset, onChange, re
                                                 : 'border-[#e2e8f0] bg-white text-[#0f172a] focus:ring-[#1d4ed8]/30'
                                         }`}
                                         style={selectStyle}>
-                                        {f.options.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        {getCascadedOpts(f, draft).map(opt => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.value === 'All' && f.required
+                                                    ? (lang === 'ar' ? `— اختر ${f.label} —` : `— Select ${f.label} —`)
+                                                    : opt.label}
+                                            </option>
                                         ))}
                                     </select>
                                     {/* Change 13: inline error message */}

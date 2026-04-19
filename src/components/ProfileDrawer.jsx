@@ -145,7 +145,7 @@ export default function ProfileDrawer({ isOpen, onClose }) {
                                 </div>
                                 <h2 className="text-xl font-bold text-gray-900">{t('profile', lang)}</h2>
                             </div>
-                            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                            <button title="Close" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                                 <X className="h-6 w-6 text-gray-500" />
                             </button>
                         </div>

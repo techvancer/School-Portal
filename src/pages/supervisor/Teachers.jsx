@@ -22,6 +22,7 @@ export default function SupervisorTeachers() {
     const { addToast } = useToast();
     const [teachers, setTeachers] = useState([]);
     const [assignmentsMap, setAssignmentsMap] = useState({});
+    const [classToStage, setClassToStage] = useState({});
     const { sorted: sortedTeachers, sortCol, sortDir, handleSort } = useSortable(teachers, 'name');
     const [hasApplied, setHasApplied] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -52,6 +53,11 @@ export default function SupervisorTeachers() {
                     .filter(r => stageIds.length === 0 || stageIds.includes(String(r.stageid)))
                     .map(r => String(r.classid))
             );
+            // Build classid → stageid lookup so the stageid filter works even when
+            // the assignments table has no stageid column.
+            const ctsMap = {};
+            (classStages || []).forEach(r => { ctsMap[String(r.classid)] = String(r.stageid); });
+            setClassToStage(ctsMap);
             const teacherIds = new Set((empTypes || []).filter(r => String(r.typeid) === '1').map(r => String(r.employeeid)));
             const supervisedAssignments = (assignments || []).filter(r => supervisedClassIds.has(String(r.classid)) && teacherIds.has(String(r.employeeid)));
             const supervisedTeacherIds = [...new Set(supervisedAssignments.map(r => String(r.employeeid)))];
@@ -117,7 +123,7 @@ export default function SupervisorTeachers() {
         const assigns = assignmentsMap[String(teacher.employeeid)] || [];
         const mc   = applied.classid      === 'All' || assigns.some(a => String(a.classid)      === String(applied.classid));
         const msec = applied.sectionid    === 'All' || assigns.some(a => String(a.sectionid)    === String(applied.sectionid));
-        const mst  = applied.stageid      === 'All' || assigns.some(a => String(a.stageid)      === String(applied.stageid));
+        const mst  = applied.stageid      === 'All' || assigns.some(a => (String(a.stageid) === String(applied.stageid)) || (classToStage[String(a.classid)] === String(applied.stageid)));
         const msub = applied.subjectid    === 'All' || assigns.some(a => String(a.subjectid)    === String(applied.subjectid));
         const msem = applied.semisterid   === 'All' || assigns.some(a => String(a.semisterid)   === String(applied.semisterid));
         const mcur = applied.curriculumid === 'All' || assigns.some(a => String(a.curriculumid) === String(applied.curriculumid));
@@ -134,7 +140,7 @@ export default function SupervisorTeachers() {
         const assigns = assignmentsMap[String(teacher.employeeid)] || [];
         const mc   = applied.classid      === 'All' || assigns.some(a => String(a.classid)      === String(applied.classid));
         const msec = applied.sectionid    === 'All' || assigns.some(a => String(a.sectionid)    === String(applied.sectionid));
-        const mst  = applied.stageid      === 'All' || assigns.some(a => String(a.stageid)      === String(applied.stageid));
+        const mst  = applied.stageid      === 'All' || assigns.some(a => (String(a.stageid) === String(applied.stageid)) || (classToStage[String(a.classid)] === String(applied.stageid)));
         const msub = applied.subjectid    === 'All' || assigns.some(a => String(a.subjectid)    === String(applied.subjectid));
         const msem = applied.semisterid   === 'All' || assigns.some(a => String(a.semisterid)   === String(applied.semisterid));
         const mcur = applied.curriculumid === 'All' || assigns.some(a => String(a.curriculumid) === String(applied.curriculumid));
@@ -173,6 +179,7 @@ export default function SupervisorTeachers() {
             <FilterBar
                 filters={buildFilters(applied, filterData, {}, lang).filter(f => !['examid', 'semisterid'].includes(f.key))}
                 appliedFilters={applied}
+                scRows={filterData.scRows}
                 onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(); }}
                 onReset={vals => { setApplied(vals); setHasApplied(false); setTeachers([]); }}
             />

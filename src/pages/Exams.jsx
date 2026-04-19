@@ -57,6 +57,7 @@ export default function Exams() {
     const [applied, setApplied] = useState({ ...EMPTY_FILTER });
     const [deleting, setDeleting] = useState(false);
     const [answeredKeys, setAnsweredKeys] = useState(new Set());
+    const [tiedModal, setTiedModal] = useState({ open: false, type: '', students: [] });
     const [examVisual, setExamVisual] = useState({ data: [], loading: false, examid: null });
     const [grades, setGrades] = useState([]);
     const [teacherExamBaseOptions, setTeacherExamOptions] = useState([]);
@@ -84,7 +85,7 @@ export default function Exams() {
                     employeeid: `eq.${user.employeeid}`, schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid,stageid,semisterid,yearid,curriculumid,divisionid,studentid',
                 }),
                 rest('exams_tbl', { select: '*' }),
-                rest('studentanswers_tbl', { employeeid: `eq.${user.employeeid}`, schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid,studentid,attempt_number' }),
+                rest('studentanswers_tbl', { employeeid: `eq.${user.employeeid}`, schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'examid,classid,sectionid,subjectid,studentid,studentmark,attempt_number' }),
                 rest('questions_exams_employee_subjects_sections_tbl', {
                     employeeid: `eq.${user.employeeid}`, schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`,
                     select: 'examid,classid,sectionid,subjectid,question_marks,status,attempt_number,exam_type',
@@ -101,22 +102,14 @@ export default function Exams() {
                 neededSubjectIds.length ? rest('subjects_tbl', { subjectid: `in.(${neededSubjectIds})`, select: 'subjectid,subjectname,Subjectname_en' }) : [],
             ]);
 
-            // Fetch actual class-section enrollment counts for the "/ N students" denominator
-            const allClassSectionPairs = [...new Set(
-                (questionRows || []).map(q => `${q.classid}-${q.sectionid}`)
-            )];
-            const classSectionStudentCounts = {};
-            await Promise.all(allClassSectionPairs.map(async pair => {
-                const [cid, sid] = pair.split('-');
-                const rows = await rest('students_sections_classes_tbl', {
-                    schoolid: `eq.${user.schoolid}`,
-                    branchid: `eq.${user.branchid}`,
-                    classid: `eq.${cid}`,
-                    sectionid: `eq.${sid}`,
-                    select: 'studentid',
-                }).catch(() => []);
-                classSectionStudentCounts[pair] = new Set((rows || []).map(r => r.studentid)).size;
-            }));
+            // Count enrolled students per exam combo from stuExams (already fetched)
+            // This ensures the denominator reflects actual exam enrollment, not current class roster
+            const examStudentCounts = {};
+            stuExams.forEach(r => {
+                const k = `${r.examid}-${r.classid}-${r.sectionid}-${r.subjectid}`;
+                if (!examStudentCounts[k]) examStudentCounts[k] = new Set();
+                examStudentCounts[k].add(r.studentid);
+            });
             examTblRef.current = examTbl; // cache for language relabeling
 
             // Keep latest-attempt tracking for chart/answeredKeys only
@@ -166,9 +159,13 @@ export default function Exams() {
                     String(a.subjectid) === String(q0.subjectid) &&
                     (parseInt(a.attempt_number, 10) || 1) === attemptNum
                 );
-                const marksEntered = new Set(attemptAnswers.map(a => a.studentid)).size;
+                const marksEntered = new Set(
+                    attemptAnswers
+                        .filter(a => { const m = parseFloat(a.studentmark); return !isNaN(m); })
+                        .map(a => a.studentid)
+                ).size;
 
-                const totalStudents = classSectionStudentCounts[`${q0.classid}-${q0.sectionid}`] ?? 0;
+                const totalStudents = examStudentCounts[`${q0.examid}-${q0.classid}-${q0.sectionid}-${q0.subjectid}`]?.size ?? 0;
 
                 const stuRow = stuExams.find(x =>
                     String(x.examid) === String(q0.examid) &&
@@ -229,11 +226,14 @@ export default function Exams() {
                     const k = `${q.examid}-${q.classid}-${q.sectionid}-${q.subjectid}`;
                     totalMaxMap[k] = (totalMaxMap[k] || 0) + (parseFloat(q.question_marks) || 0);
                 });
-                // Sum earned marks per student per exam-class-section-subject
+                // Sum earned marks per student — only for students with at least one numeric mark
                 const stuEarned = {};
                 (answerRows || []).forEach(a => {
-                    const k = `${a.examid}-${a.classid}-${a.sectionid}-${a.subjectid}-${a.studentid}`;
-                    stuEarned[k] = (stuEarned[k] || 0) + (parseFloat(a.studentmark) || 0);
+                    const mark = parseFloat(a.studentmark);
+                    if (!isNaN(mark)) {
+                        const k = `${a.examid}-${a.classid}-${a.sectionid}-${a.subjectid}-${a.studentid}`;
+                        stuEarned[k] = (stuEarned[k] || 0) + mark;
+                    }
                 });
                 // Convert to pct scores — one entry per student per exam combo
                 const scores = Object.entries(stuEarned).map(([k, earned]) => {
@@ -241,7 +241,7 @@ export default function Exams() {
                     const comboKey = parts.slice(0, 4).join('-');
                     const totalMax = totalMaxMap[comboKey] || 0;
                     return totalMax > 0 ? parseFloat((earned / totalMax * 100).toFixed(1)) : 0;
-                }).filter(s => s > 0);
+                });
                 setAllStudentScores(scores);
             } catch { setAllStudentScores([]); }
         } catch (e) { addToast(e.message, 'error'); }
@@ -316,13 +316,46 @@ export default function Exams() {
                 ? Math.max(...attemptQs.map(q => parseInt(q.attempt_number, 10) || 1))
                 : (parseInt(e.attempt_number, 10) || 1);
 
-            const response = await fetch('https://n8n.srv1133195.hstgr.cloud/webhook-test/strat_grading', {
+            const rawExam = examTblRef.current.find(ex => ex.examid === e.examid);
+
+            // Fetch teacher details + supervisor stage assignments in parallel
+            const [teacherRows, supStageRows] = await Promise.all([
+                rest('employee_tbl', { employeeid: `eq.${user.employeeid}`, select: 'employeeid,employeename_en,employeename,employeeemail' }).catch(() => []),
+                rest('employees_types_stages_tbl', { stageid: `eq.${e.stageid}`, schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: 'employeeid' }).catch(() => []),
+            ]);
+            const teacher = teacherRows?.[0] || {};
+
+            // Find the supervisor: someone in this stage who has typeid=2
+            let supervisor = {};
+            const supCandidateIds = [...new Set((supStageRows || []).map(r => r.employeeid))];
+            if (supCandidateIds.length) {
+                const supTypeRows = await rest('employees_types_tbl', { employeeid: `in.(${supCandidateIds})`, typeid: 'eq.2', select: 'employeeid' }).catch(() => []);
+                const supIds = supTypeRows.map(r => r.employeeid);
+                if (supIds.length) {
+                    const supEmpRows = await rest('employee_tbl', { employeeid: `in.(${supIds})`, select: 'employeeid,employeename_en,employeename,employeeemail' }).catch(() => []);
+                    supervisor = supEmpRows?.[0] || {};
+                }
+            }
+
+            const runid = crypto.randomUUID();
+            const response = await fetch('https://n8n.srv1133195.hstgr.cloud/webhook/strat_grading', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     eventType: 'start-grading-workflow',
+                    runid,
                     examid: e.examid, classid: e.classid, sectionid: e.sectionid,
-                    subjectid: e.subjectid, employeeid: user.employeeid,
+                    classname: e.classname || null,
+                    sectionname: e.sectionname || null,
+                    subjectid: e.subjectid, subjectname: e.subjectname,
+                    examname_en: rawExam?.examname_en || null,
+                    exam_type: e.examType || null,
+                    employeeid: user.employeeid,
+                    teacher_name: teacher.employeename_en || teacher.employeename || null,
+                    teacher_email: teacher.employeeemail || null,
+                    supervisor_employeeid: supervisor.employeeid || null,
+                    supervisor_name: supervisor.employeename_en || supervisor.employeename || null,
+                    supervisor_email: supervisor.employeeemail || null,
                     timestamp: new Date().toISOString(),
                     schoolid: user.schoolid,
                     schoolname_en: user.schoolName,
@@ -337,7 +370,7 @@ export default function Exams() {
             });
             await dbQuery(
                 `questions_exams_employee_subjects_sections_tbl?examid=eq.${e.examid}&employeeid=eq.${user.employeeid}&classid=eq.${e.classid}&sectionid=eq.${e.sectionid}&subjectid=eq.${e.subjectid}&schoolid=eq.${user.schoolid}&branchid=eq.${user.branchid}&attempt_number=eq.${latestAttemptNum}`,
-                'PATCH', { status: 'submitted' }, 'return=minimal'
+                'PATCH', { status: 'submitted', runid }, 'return=minimal'
             );
             if (response.ok) { addToast('Marks processing started!', 'success'); }
             else { addToast('Status updated. Workflow trigger failed — check n8n.', 'warning'); }
@@ -422,10 +455,13 @@ export default function Exams() {
                     questionRows.forEach(q => { qMaxMap[q.questionid] = parseFloat(q.question_marks) || 0; });
                     const totalMax = Object.values(qMaxMap).reduce((a, b) => a + b, 0);
 
-                    // Sum marks per student — only for students who have actual answer records
+                    // Sum marks per student — only for students with at least one numeric mark
                     const stuTotals = {};
                     answerRows.forEach(a => {
-                        stuTotals[a.studentid] = (stuTotals[a.studentid] || 0) + (parseFloat(a.studentmark) || 0);
+                        const mark = parseFloat(a.studentmark);
+                        if (!isNaN(mark)) {
+                            stuTotals[a.studentid] = (stuTotals[a.studentid] || 0) + mark;
+                        }
                     });
 
                     return { stuTotals, studentRows, totalMax };
@@ -460,12 +496,13 @@ export default function Exams() {
         const ms = !search || e.examname?.toLowerCase().includes(search.toLowerCase()) || e.subjectname?.toLowerCase().includes(search.toLowerCase());
         const mcur = !applied.curriculumid || applied.curriculumid === 'All' || String(e.curriculumid) === applied.curriculumid;
         const mdiv = !applied.divisionid || applied.divisionid === 'All' || String(e.divisionid) === applied.divisionid;
+        const mstage = !applied.stageid || applied.stageid === 'All' || String(e.stageid) === applied.stageid;
         const mc = !applied.classid || applied.classid === 'All' || String(e.classid) === applied.classid;
         const msec = !applied.sectionid || applied.sectionid === 'All' || String(e.sectionid) === applied.sectionid;
         const mex = !applied.examid || applied.examid === 'All' || String(e.examid) === applied.examid;
         const msub = !applied.subjectid || applied.subjectid === 'All' || String(e.subjectid) === applied.subjectid;
         const msem = !applied.semisterid || applied.semisterid === 'All' || String(e.semisterid) === applied.semisterid;
-        return ms && mcur && mdiv && mc && msec && mex && msub && msem;
+        return ms && mcur && mdiv && mstage && mc && msec && mex && msub && msem;
     }));
 
     // Fetch per-student scores for distribution chart — triggered by applied filters
@@ -508,7 +545,10 @@ export default function Exams() {
                     const eAnswers = allEA.filter(a => (parseInt(a.attempt_number, 10) || 1) === latestAttempt);
                     const stuTotals = {};
                     eAnswers.forEach(a => {
-                        stuTotals[a.studentid] = (stuTotals[a.studentid] || 0) + (parseFloat(a.studentmark) || 0);
+                        const mark = parseFloat(a.studentmark);
+                        if (!isNaN(mark)) {
+                            stuTotals[a.studentid] = (stuTotals[a.studentid] || 0) + mark;
+                        }
                     });
                     const scores = Object.values(stuTotals).map(earned =>
                         parseFloat((earned / totalMax * 100).toFixed(1))
@@ -554,6 +594,7 @@ export default function Exams() {
             <FilterBar
                 filters={buildFilters(applied, { ...filterData, exams: teacherExamOptions }, {}, lang)}
                 appliedFilters={applied}
+                scRows={filterData.scRows}
 
                 onApply={vals => { setApplied(vals); setHasApplied(true); fetchExams(); }}
                 onReset={vals => { setApplied(vals); setHasApplied(false); }}
@@ -815,6 +856,8 @@ export default function Exams() {
                                         const avg = parseFloat((examVisual.data.reduce((a, b) => a + b.pct, 0) / total).toFixed(1));
                                         const highest = examVisual.data[0];
                                         const lowest = examVisual.data[examVisual.data.length - 1];
+                                        const highestTied = examVisual.data.filter(d => d.pct === highest?.pct);
+                                        const lowestTied = examVisual.data.filter(d => d.pct === lowest?.pct);
                                         return (
                                             <>
                                                 <div className="bg-slate-50 rounded-xl p-4 border border-[#e2e8f0]">
@@ -830,11 +873,23 @@ export default function Exams() {
                                                     <p className="text-xs text-blue-700 font-medium mb-1">{t('highest', lang)}</p>
                                                     <p className="text-2xl font-bold text-blue-700">{highest?.pct}%</p>
                                                     <p className="text-[10px] text-blue-500 mt-0.5 truncate">{highest?.name}</p>
+                                                    {highestTied.length > 1 && (
+                                                        <button onClick={() => setTiedModal({ open: true, type: 'highest', students: highestTied })}
+                                                            className="mt-1.5 text-[10px] font-bold text-blue-600 hover:text-blue-800 underline underline-offset-2 cursor-pointer">
+                                                            +{highestTied.length - 1} more
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 <div className="bg-red-50 rounded-xl p-4 border border-red-100">
                                                     <p className="text-xs text-red-700 font-medium mb-1">{t('lowest', lang)}</p>
                                                     <p className="text-2xl font-bold text-red-700">{lowest?.pct}%</p>
                                                     <p className="text-[10px] text-red-500 mt-0.5 truncate">{lowest?.name}</p>
+                                                    {lowestTied.length > 1 && (
+                                                        <button onClick={() => setTiedModal({ open: true, type: 'lowest', students: lowestTied })}
+                                                            className="mt-1.5 text-[10px] font-bold text-red-500 hover:text-red-700 underline underline-offset-2 cursor-pointer">
+                                                            +{lowestTied.length - 1} more
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </>
                                         );
@@ -914,6 +969,37 @@ export default function Exams() {
                                 <button onClick={handleCancel} disabled={cancelling} className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60">
                                     {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Exam
                                 </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Tied students modal */}
+            <AnimatePresence>
+                {tiedModal.open && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+                        onClick={() => setTiedModal({ open: false, type: '', students: [] })}>
+                        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
+                            className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+                            onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-bold text-[#0f172a]">
+                                    {tiedModal.type === 'highest' ? (isAr ? 'أعلى الدرجات' : 'Highest Scores') : (isAr ? 'أدنى الدرجات' : 'Lowest Scores')}
+                                </h3>
+                                <button onClick={() => setTiedModal({ open: false, type: '', students: [] })}
+                                    className="text-[#94a3b8] hover:text-[#475569] text-lg font-bold leading-none">✕</button>
+                            </div>
+                            <div className="space-y-2 max-h-72 overflow-y-auto">
+                                {tiedModal.students.map((s, i) => (
+                                    <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 border border-[#e2e8f0]">
+                                        <span className="text-sm font-medium text-[#0f172a] truncate mr-3">{s.name}</span>
+                                        <span className={`text-sm font-bold shrink-0 ${tiedModal.type === 'highest' ? 'text-blue-600' : 'text-red-500'}`}>
+                                            {s.earned} / {s.totalMax} ({s.pct}%)
+                                        </span>
+                                    </div>
+                                ))}
                             </div>
                         </motion.div>
                     </motion.div>

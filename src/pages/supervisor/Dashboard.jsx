@@ -223,7 +223,7 @@ export default function SupervisorDashboard() {
 
             <FilterBar
                 filters={buildFilters(applied, filterData, {}, lang)}
-                
+                scRows={filterData.scRows}
                 appliedFilters={applied}onApply={handleApply}
                 onReset={handleReset}
             />

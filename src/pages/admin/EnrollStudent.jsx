@@ -124,16 +124,22 @@ export default function AdminEnrollStudent() {
         parentmobile:               form.parentmobile               || null,
         parent_position:            form.parent_position            || null,
       });
-      await insert('students_sections_classes_tbl', {
-        studentid:    newStu.studentid,
-        classid:      parseInt(form.classid,      10),
-        sectionid:    parseInt(form.sectionid,    10),
-        stageid:      parseInt(form.stageid,      10),
-        schoolid:     user.schoolid,
-        branchid:     user.branchid,
-        divisionid:   parseInt(form.divisionid   || user.divisionid   || 1, 10),
-        curriculumid: parseInt(form.curriculumid || user.curriculumid || 1, 10),
-      });
+      try {
+        await insert('students_sections_classes_tbl', {
+          studentid:    newStu.studentid,
+          classid:      parseInt(form.classid,      10),
+          sectionid:    parseInt(form.sectionid,    10),
+          stageid:      parseInt(form.stageid,      10),
+          schoolid:     user.schoolid,
+          branchid:     user.branchid,
+          divisionid:   parseInt(form.divisionid   || user.divisionid   || 1, 10),
+          curriculumid: parseInt(form.curriculumid || user.curriculumid || 1, 10),
+        });
+      } catch (enrollErr) {
+        // Roll back: remove the student row so no orphan is left in students_tbl
+        await dbQuery(`students_tbl?studentid=eq.${newStu.studentid}`, 'DELETE').catch(() => {});
+        throw enrollErr;
+      }
       addToast(t('studentEnrolledSuccess', lang), 'success');
       navigate('/admin/students');
     } catch (err) {

@@ -205,6 +205,7 @@ export default function AdminTeachers() {
 
             <FilterBar
                 filters={buildFilters(applied, filterData, {}, lang).filter(f => f.key !== 'examid' && f.key !== 'semisterid')}
+                scRows={filterData.scRows}
                 onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(); }}
                 onReset={vals => { setApplied(vals); setHasApplied(false); setTeachers([]); }}
             />
@@ -270,8 +271,8 @@ export default function AdminTeachers() {
                                     <td className="px-4 py-3 text-center">{teacher.sectionname !== '—' ? (<span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-[#eff6ff] text-[#1d4ed8] text-xs font-bold border border-blue-100 min-w-[28px]">{teacher.sectionname}</span>) : <span className="text-[#94a3b8] text-xs">—</span>}</td>
                                     <td className="px-4 py-3 text-center">
                                         <div className="flex items-center gap-2">
-                                            <button onClick={() => openEdit(teacher)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
-                                            <button onClick={() => { setSelectedTeacher(teacher); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
+                                            <button title="Edit" onClick={() => openEdit(teacher)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
+                                            <button title="Delete" onClick={() => { setSelectedTeacher(teacher); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -294,7 +295,7 @@ export default function AdminTeachers() {
                             <form onSubmit={(e) => { e.preventDefault(); setConfirm({ open: true, action: 'create' }); }}>
                                 <div className="p-6 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc]">
                                     <h2 className="text-xl font-bold text-[#0f172a]">{t('createNewTeacher', lang)}</h2>
-                                    <button type="button" onClick={closeModal} className="p-2 hover:bg-white rounded-full text-[#64748b]"><X className="h-6 w-6" /></button>
+                                    <button title="Close" type="button" onClick={closeModal} className="p-2 hover:bg-white rounded-full text-[#64748b]"><X className="h-6 w-6" /></button>
                                 </div>
                                 <div className="p-8 space-y-5">
                                     <div className="space-y-2">

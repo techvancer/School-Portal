@@ -48,6 +48,7 @@ export default function SortableTh({
                         onClick={e => e.stopPropagation()}
                     />
                     <button
+                        title="Clear Search"
                         onClick={e => { e.stopPropagation(); onSearchClose?.(); }}
                         className="flex-shrink-0 text-[#94a3b8] hover:text-[#475569]"
                     >

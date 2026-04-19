@@ -31,7 +31,7 @@ const getNavItems = (role, lang) => {
     if (role === 'Supervisor') {
         return [
             ...base,
-            { icon: Users,         label: t('teachers', lang),   path: '/supervisor/teachers' },
+            { icon: Briefcase,     label: t('teachers', lang),   path: '/supervisor/teachers' },
             { icon: Users,         label: t('students', lang),   path: '/supervisor/students' },
             { icon: CalendarCheck, label: t('attendance', lang), path: '/supervisor/attendance' },
             { icon: ClipboardList, label: t('exams', lang),      path: '/supervisor/exams' },

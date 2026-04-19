@@ -38,7 +38,7 @@ export default function DefineQuestions() {
     return (
         <div className="space-y-6 animate-fade-in pb-12">
             <div className="flex items-center gap-4">
-                <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                <button title="Go Back" onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                     <ChevronLeft className="h-6 w-6 text-[#64748b]" />
                 </button>
                 <div>
@@ -64,7 +64,7 @@ export default function DefineQuestions() {
                                         </span>
                                     </div>
                                 </div>
-                                <button onClick={() => removeQ(q.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                                <button title="Delete Question" onClick={() => removeQ(q.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                                     <Trash2 className="h-4 w-4" />
                                 </button>
                             </div>

@@ -153,16 +153,23 @@ export default function AdminDashboard() {
                 try { sessionStorage.setItem('adminDash_topClasses', JSON.stringify(effectiveTop)); } catch {}
             } catch { setStudentsPerClass([]); }
 
+            // When teacher filter is active, scope grade distribution to only that teacher's exams.
+            // examEnrollRows is already filtered by employeeid, so its exam IDs are authoritative.
+            const teacherExamIds = (filters.employeeid && filters.employeeid !== 'All')
+                ? [...new Set((examEnrollRows || []).map(r => r.examid))]
+                : undefined;
+
             const gd = await fetchGradeDistribution({
-                schoolid:      sid, branchid: bid,
-                curriculumid:  filters.curriculumid && filters.curriculumid !== 'All' ? filters.curriculumid : undefined,
-                divisionid:    filters.divisionid   && filters.divisionid   !== 'All' ? filters.divisionid   : undefined,
-                stageid:       filters.stageid      && filters.stageid      !== 'All' ? filters.stageid      : undefined,
-                classid:       filters.classid      && filters.classid      !== 'All' ? filters.classid      : undefined,
-                sectionid:     filters.sectionid    && filters.sectionid    !== 'All' ? filters.sectionid    : undefined,
-                subjectid:     filters.subjectid    && filters.subjectid    !== 'All' ? filters.subjectid    : undefined,
-                examid:        filters.examid       && filters.examid       !== 'All' ? filters.examid       : undefined,
-                semisterid:    filters.semisterid   && filters.semisterid   !== 'All' ? filters.semisterid   : undefined,
+                schoolid:        sid, branchid: bid,
+                curriculumid:    filters.curriculumid && filters.curriculumid !== 'All' ? filters.curriculumid : undefined,
+                divisionid:      filters.divisionid   && filters.divisionid   !== 'All' ? filters.divisionid   : undefined,
+                stageid:         filters.stageid      && filters.stageid      !== 'All' ? filters.stageid      : undefined,
+                classid:         filters.classid      && filters.classid      !== 'All' ? filters.classid      : undefined,
+                sectionid:       filters.sectionid    && filters.sectionid    !== 'All' ? filters.sectionid    : undefined,
+                subjectid:       filters.subjectid    && filters.subjectid    !== 'All' ? filters.subjectid    : undefined,
+                examid:          filters.examid       && filters.examid       !== 'All' ? filters.examid       : undefined,
+                semisterid:      filters.semisterid   && filters.semisterid   !== 'All' ? filters.semisterid   : undefined,
+                completedExamIds: teacherExamIds,
             });
             // If no students match the current filters, clear charts
             const effectiveGd = totalStudents === 0 && Object.values(filters).some(v => v && v !== 'All') ? [] : (gd || []);
@@ -257,9 +264,9 @@ export default function AdminDashboard() {
             <FilterBar
                 filters={[
                     ...buildFilters(applied, filterData, {}, lang),
-                    { key: 'employeeid', label: t('teacher', lang), value: applied.employeeid ?? 'All', options: filterData.employees || [] },
+                    { key: 'employeeid', label: t('teacher', lang), value: applied.employeeid ?? 'All', options: filterData.employees || [], lockedUnless: ['curriculumid', 'divisionid'] },
                 ]}
-                
+                scRows={filterData.scRows}
                 appliedFilters={applied}onApply={handleApply}
                 onReset={handleReset}
                 onChange={setDraftFilters}

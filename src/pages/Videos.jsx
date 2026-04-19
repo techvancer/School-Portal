@@ -121,7 +121,7 @@ export default function Videos() {
                 rest('questions_exams_employee_subjects_sections_tbl', {
                     employeeid: `eq.${user.employeeid}`, classid: `eq.${classid}`,
                     sectionid: `eq.${sectionid}`, subjectid: `eq.${subjectid}`,
-                    status: 'in.(new,marked)', select: 'examid',
+                    status: 'in.(new,marked,submitted,completed,inprogress)', select: 'examid',
                 }),
             ]);
             const allowedExamIds = new Set(qExams.map(e => String(e.examid)));

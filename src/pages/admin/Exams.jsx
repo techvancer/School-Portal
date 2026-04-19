@@ -4,7 +4,7 @@ import { useLang } from '../../context/LanguageContext';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ClipboardList, Trash2, AlertTriangle, CheckCircle, Search, Filter } from 'lucide-react';
+import { ClipboardList, Trash2, AlertTriangle, CheckCircle, Search, BarChart2, X, Loader2 } from 'lucide-react';
 import Breadcrumb from '../../components/Breadcrumb';
 import FilterBar from '../../components/FilterBar';
 import { useToast } from '../../context/ToastContext';
@@ -33,6 +33,8 @@ export default function AdminExams() {
     const [examTypes, setExamTypes] = useState([]);
     const [deleteModal, setDeleteModal] = useState({ show: false, row: null });
     const [detailModal, setDetailModal] = useState({ show: false, row: null });
+    const [detailStats, setDetailStats] = useState(null);
+    const [detailStatsLoading, setDetailStatsLoading] = useState(false);
 
     const fetchData = useCallback(async (filters = {}) => {
         if (!user) return;
@@ -154,6 +156,42 @@ export default function AdminExams() {
         fetchData(merged);
     }, [location.state, fetchData]);
 
+    // Fetch per-exam stats whenever the detail modal opens
+    useEffect(() => {
+        if (!detailModal.show || !detailModal.row || !user) { setDetailStats(null); return; }
+        const row = detailModal.row;
+        setDetailStatsLoading(true);
+        (async () => {
+            try {
+                const base = { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, examid: `eq.${row.examid}`, classid: `eq.${row.classid}`, sectionid: `eq.${row.sectionid}`, subjectid: `eq.${row.subjectid}` };
+                const [answers, questions] = await Promise.all([
+                    rest('studentanswers_tbl', { ...base, select: 'studentid,studentmark,questionid' }).catch(() => []),
+                    rest('questions_exams_employee_subjects_sections_tbl', { ...base, select: 'questionid,question_marks' }).catch(() => []),
+                ]);
+                const qMaxMap = {};
+                (questions || []).forEach(q => { qMaxMap[q.questionid] = parseFloat(q.question_marks) || 0; });
+                const totalPossible = Object.values(qMaxMap).reduce((a, b) => a + b, 0);
+                const studentMarks = {};
+                (answers || []).forEach(a => {
+                    const sid = String(a.studentid);
+                    if (!studentMarks[sid]) studentMarks[sid] = 0;
+                    studentMarks[sid] += parseFloat(a.studentmark) || 0;
+                });
+                const marksEntered = Object.keys(studentMarks).length;
+                const scores = totalPossible > 0
+                    ? Object.values(studentMarks).map(earned => (earned / totalPossible) * 100)
+                    : [];
+                const avgScore  = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+                const passCount = scores.filter(s => s >= 50).length;
+                const passRate  = scores.length ? (passCount / scores.length) * 100 : null;
+                const highest   = scores.length ? Math.max(...scores) : null;
+                const lowest    = scores.length ? Math.min(...scores) : null;
+                setDetailStats({ marksEntered, totalPossible, avgScore, passRate, passCount, highest, lowest, hasData: marksEntered > 0 });
+            } catch { setDetailStats(null); }
+            finally { setDetailStatsLoading(false); }
+        })();
+    }, [detailModal.show, detailModal.row, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const filtered = sortedRows.filter(r => {
         const q = search.toLowerCase();
         const matchSearch = !search ||
@@ -214,6 +252,7 @@ export default function AdminExams() {
             <FilterBar
                 filters={[...buildFilters(applied, filterData, {}, lang), { key: 'employeeid', label: t('teacher', lang), value: applied.employeeid ?? 'All', options: filterData.employees || [] }]}
                 appliedFilters={applied}
+                scRows={filterData.scRows}
 
                 onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
                 onReset={vals => { setApplied({ ...vals, employeeid: 'All' }); setHasApplied(false); setRows([]); }}
@@ -315,7 +354,7 @@ export default function AdminExams() {
                                                         className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100"
                                                         title="View Details"
                                                     >
-                                                        <Filter className="h-4 w-4" />
+                                                        <BarChart2 className="h-4 w-4" />
                                                     </button>
                                                     <button
                                                         onClick={() => setDeleteModal({ show: true, row })}
@@ -342,46 +381,113 @@ export default function AdminExams() {
 
             {/* Exam Details Modal */}
             <AnimatePresence>
-                {detailModal.show && detailModal.row && (
+                {detailModal.show && detailModal.row && (() => {
+                    const row = detailModal.row;
+                    const st = detailStats;
+                    const fmt = (n) => n != null ? `${Math.round(n)}%` : '—';
+                    const statusColors = {
+                        cancelled: 'bg-red-100 text-red-700 border-red-200',
+                        submitted: 'bg-purple-100 text-purple-700 border-purple-200',
+                        marked: 'bg-green-100 text-green-700 border-green-200',
+                        new: 'bg-slate-100 text-slate-600 border-slate-200',
+                    };
+                    const statusColor = statusColors[row.examStatus] || statusColors.new;
+                    return (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
                             onClick={() => setDetailModal({ show: false, row: null })} />
                         <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
                             className="bg-white rounded-2xl w-full max-w-lg shadow-2xl z-10 overflow-hidden relative">
-                            <div className="flex items-center justify-between px-6 py-4 bg-blue-50 border-b border-blue-100">
-                                <div>
-                                    <h3 className="text-lg font-bold text-[#1d4ed8]">{t('exam', lang)} {t('view', lang)}</h3>
-                                    <p className="text-xs text-blue-500 mt-0.5">{detailModal.row.examName}</p>
+
+                            {/* Header */}
+                            <div className="flex items-start justify-between px-6 py-5 bg-gradient-to-r from-[#1e3a8a] to-[#1d4ed8] text-white">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 bg-white/15 rounded-xl">
+                                        <BarChart2 className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-bold">{row.examName}</h3>
+                                        <p className="text-blue-200 text-xs mt-0.5">{row.subjectName} · {t('class', lang)} {row.classname} — {row.sectionname}</p>
+                                    </div>
                                 </div>
-                                <button onClick={() => setDetailModal({ show: false, row: null })} className="p-2 rounded-lg text-blue-400 hover:text-blue-600 hover:bg-blue-100">
-                                    <ClipboardList className="h-5 w-5" />
+                                <button title="Close" onClick={() => setDetailModal({ show: false, row: null })} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors mt-0.5">
+                                    <X className="h-4 w-4" />
                                 </button>
                             </div>
-                            <div className="p-6 space-y-3">
-                                {[
-                                    { label: t('exam', lang), value: detailModal.row.examName },
-                                    { label: t('class', lang), value: `${t('class', lang)} ${detailModal.row.classname} — ${detailModal.row.sectionname}` },
-                                    { label: t('subject', lang), value: detailModal.row.subjectName },
-                                    { label: t('teacher', lang), value: detailModal.row.teacherName },
-                                    { label: t('status', lang), value: detailModal.row.examStatus ? (detailModal.row.examStatus.charAt(0).toUpperCase() + detailModal.row.examStatus.slice(1)) : '—' },
-                                    { label: t('students', lang), value: detailModal.row.studentCount },
-                                    detailModal.row.totalmarks != null && { label: t('totalMarks', lang), value: detailModal.row.totalmarks },
-                                    detailModal.row.duration != null && { label: 'Duration', value: `${detailModal.row.duration} min` },
-                                    detailModal.row.description && { label: 'Description', value: detailModal.row.description },
-                                ].filter(Boolean).map((item, i) => (
-                                    <div key={i} className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
-                                        <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider w-28 shrink-0 pt-0.5">{item.label}</span>
-                                        <span className="text-sm font-semibold text-[#0f172a]">{item.value}</span>
-                                    </div>
-                                ))}
+
+                            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                                {/* Basic info */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    {[
+                                        { label: t('teacher', lang),    value: row.teacherName },
+                                        { label: t('curriculum', lang), value: row.curriculumname },
+                                        { label: t('division', lang),   value: row.divisionname },
+                                        { label: t('status', lang),     value: (
+                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold border capitalize ${statusColor}`}>
+                                                {row.examStatus || 'new'}
+                                            </span>
+                                        )},
+                                        { label: t('students', lang),   value: row.studentCount },
+                                        row.totalmarks != null && { label: t('totalMarks', lang), value: row.totalmarks },
+                                        row.duration    != null && { label: 'Duration',           value: `${row.duration} min` },
+                                        row.description         && { label: 'Description',        value: row.description },
+                                    ].filter(Boolean).map((item, i) => (
+                                        <div key={i} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                                            <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider mb-1">{item.label}</p>
+                                            <div className="text-sm font-bold text-[#0f172a]">{item.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Performance stats */}
+                                <div>
+                                    <p className="text-xs font-bold text-[#64748b] uppercase tracking-wider mb-3 flex items-center gap-2">
+                                        <BarChart2 className="h-3.5 w-3.5" /> Performance
+                                    </p>
+                                    {detailStatsLoading ? (
+                                        <div className="flex items-center justify-center py-6 text-[#94a3b8]">
+                                            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading stats...
+                                        </div>
+                                    ) : !st || !st.hasData ? (
+                                        <div className="text-center py-6 text-sm text-[#94a3b8] bg-slate-50 rounded-xl border border-slate-100">
+                                            No marks entered yet
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                                                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Avg Score</p>
+                                                <p className="text-2xl font-black text-blue-700 mt-1">{fmt(st.avgScore)}</p>
+                                            </div>
+                                            <div className={`border rounded-xl p-3 text-center ${st.passRate >= 50 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                                                <p className={`text-[10px] font-bold uppercase tracking-wider ${st.passRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>Pass Rate</p>
+                                                <p className={`text-2xl font-black mt-1 ${st.passRate >= 50 ? 'text-green-700' : 'text-red-700'}`}>{fmt(st.passRate)}</p>
+                                                <p className={`text-[10px] mt-0.5 ${st.passRate >= 50 ? 'text-green-500' : 'text-red-500'}`}>{st.passCount} / {st.marksEntered} passed</p>
+                                            </div>
+                                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
+                                                <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Highest Score</p>
+                                                <p className="text-2xl font-black text-[#0f172a] mt-1">{fmt(st.highest)}</p>
+                                            </div>
+                                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
+                                                <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Lowest Score</p>
+                                                <p className="text-2xl font-black text-[#0f172a] mt-1">{fmt(st.lowest)}</p>
+                                            </div>
+                                            <div className="col-span-2 bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-center justify-between">
+                                                <p className="text-xs font-bold text-indigo-500">Marks Entered</p>
+                                                <p className="text-sm font-black text-indigo-700">{st.marksEntered} / {row.studentCount} students</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+
                             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-                                <button onClick={() => setDetailModal({ show: false, row: null })} className="px-5 py-2 rounded-xl bg-[#1d4ed8] text-white text-sm font-bold hover:bg-[#1e40af]">{t('cancel', lang)}</button>
+                                <button onClick={() => setDetailModal({ show: false, row: null })} className="px-5 py-2 rounded-xl bg-[#1d4ed8] text-white text-sm font-bold hover:bg-[#1e40af]">Close</button>
                             </div>
                         </motion.div>
                     </div>
-                )}
+                    );
+                })()}
             </AnimatePresence>
 
             {/* Delete Modal */}

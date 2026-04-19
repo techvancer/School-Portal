@@ -204,6 +204,7 @@ export default function SupervisorExams() {
             <FilterBar
                 filters={buildFilters(applied, filterData, {}, lang)}
                 appliedFilters={applied}
+                scRows={filterData.scRows}
 
                 onApply={vals => { setApplied(vals); setHasApplied(true); fetchData(vals); }}
                 onReset={vals => { setApplied(vals); setHasApplied(false); setExams([]); }}

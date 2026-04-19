@@ -247,10 +247,11 @@ export default function AdminAssignments() {
         setIsLoading(true);
         try {
             const sc = assignments.students.find(a => String(a.studentid) === String(newRow.studentid));
+            // INSERT first, then DELETE old row — prevents orphan if insert fails
+            await insert('students_sections_classes_tbl', { studentid: parseInt(newRow.studentid), classid: parseInt(newRow.classid), sectionid: parseInt(newRow.sectionid), stageid: parseInt(newRow.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(newRow.curriculumid) || user.curriculumid || 1 });
             if (sc) {
                 await dbQuery(`students_sections_classes_tbl?studentid=eq.${newRow.studentid}&classid=eq.${sc.classid}&sectionid=eq.${sc.sectionid}`, 'DELETE');
             }
-            await insert('students_sections_classes_tbl', { studentid: parseInt(newRow.studentid), classid: parseInt(newRow.classid), sectionid: parseInt(newRow.sectionid), stageid: parseInt(newRow.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(newRow.curriculumid) || user.curriculumid || 1 });
             addToast(t('studentAssigned', lang), 'success');
             setAddingNew(false); setNewRow({});
             fetchData();
@@ -265,8 +266,9 @@ export default function AdminAssignments() {
         setIsLoading(true);
         try {
             if (activeTab === 'students') {
-                await dbQuery(`students_sections_classes_tbl?studentid=eq.${row.studentid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}`, 'DELETE');
+                // INSERT first, then DELETE old row — prevents data loss if insert fails
                 await insert('students_sections_classes_tbl', { studentid: row.studentid, classid: parseInt(editForm.classid), sectionid: parseInt(editForm.sectionid), stageid: parseInt(editForm.stageid), schoolid: user.schoolid, branchid: user.branchid, divisionid: user.divisionid || 1, curriculumid: parseInt(editForm.curriculumid) || row.curriculumid || 1 });
+                await dbQuery(`students_sections_classes_tbl?studentid=eq.${row.studentid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}`, 'DELETE');
             } else if (activeTab === 'subjects') {
                 await dbQuery(`sections_subjects_classes_tbl?subjectid=eq.${row.subjectid}&classid=eq.${row.classid}&sectionid=eq.${row.sectionid}&schoolid=eq.${user.schoolid}`, 'DELETE');
                 await insert('sections_subjects_classes_tbl', { subjectid: row.subjectid, classid: parseInt(editForm.classid), sectionid: parseInt(editForm.sectionid), schoolid: user.schoolid, branchid: user.branchid, stageid: parseInt(editForm.stageid) || row.stageid || 1, curriculumid: parseInt(editForm.curriculumid) || row.curriculumid || 1, divisionid: row.divisionid || 1 });
@@ -569,8 +571,8 @@ export default function AdminAssignments() {
                                             <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
-                                                    <button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
+                                                    <button title="Edit" onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button>
+                                                    <button title="Delete" onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button>
                                                 </div>
                                             </td>
                                         </>}
@@ -588,7 +590,7 @@ export default function AdminAssignments() {
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{t('class', lang)} {row.classname}</td>
                                             <td className="px-4 py-3 text-center"><span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-[#eff6ff] text-[#1d4ed8] text-xs font-bold border border-blue-100">{row.sectionname}</span></td>
                                             <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid || ''), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button title="Edit" onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid || ''), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button title="Delete" onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
                                         </>}
                                     </>}
                                     {activeTab === 'supervisors' && <>
@@ -600,7 +602,7 @@ export default function AdminAssignments() {
                                         </> : <>
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{row.stagename}</td>
                                             <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ stageid: String(row.stageid), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button title="Edit" onClick={() => { setEditingRow(i); setEditForm({ stageid: String(row.stageid), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button title="Delete" onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
                                         </>}
                                     </>}
                                     {activeTab === 'teachers' && <>
@@ -617,7 +619,7 @@ export default function AdminAssignments() {
                                             <td className="px-4 py-3 text-center text-sm text-[#475569]">{t('class', lang)} {row.classname}</td>
                                             <td className="px-4 py-3 text-center"><span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-[#eff6ff] text-[#1d4ed8] text-xs font-bold border border-blue-100">{row.sectionname}</span></td>
                                             <td className="px-4 py-3 text-center text-xs text-[#64748b]">{row.curriculumname || '—'}</td>
-                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid || ''), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
+                                            <td className="px-4 py-3 text-center"><div className="flex gap-2"><button title="Edit" onClick={() => { setEditingRow(i); setEditForm({ classid: String(row.classid), sectionid: String(row.sectionid), stageid: String(row.stageid || ''), curriculumid: String(row.curriculumid || '') }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-100"><Edit2 className="h-4 w-4" /></button><button title="Delete" onClick={() => handleDelete(row)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg border border-red-100"><Trash2 className="h-4 w-4" /></button></div></td>
                                         </>}
                                     </>}
                                 </tr>

@@ -193,12 +193,11 @@ export default function EditMarks() {
                     classid: `eq.${sec.classid}`, sectionid: `eq.${sec.sectionid}`,
                     schoolid: `eq.${user.schoolid}`, select: 'studentid'
                 }),
-                // Change 9: fetch question_marks, sort ascending by questionid
                 rest('questions_exams_employee_subjects_sections_tbl', {
                     examid: `eq.${selExam}`, employeeid: `eq.${user.employeeid}`,
                     subjectid: `eq.${sec.subjectid}`, classid: `eq.${sec.classid}`,
                     sectionid: `eq.${sec.sectionid}`,
-                    select: 'questionid,question_marks',
+                    select: 'questionid,question_marks,status',
                     order: 'questionid.asc',
                 }),
                 rest('studentanswers_tbl', {
@@ -208,8 +207,25 @@ export default function EditMarks() {
                 }),
             ]);
 
-            const enrolledIds = new Set(stuScRows.map(r => r.studentid));
-            existing.forEach(ans => enrolledIds.add(ans.studentid));
+            const examStatusFromQ = (qs?.[0]?.status || '').toLowerCase();
+            const isFinalized = ['marked', 'completed', 'inprogress', 'submitted'].includes(examStatusFromQ);
+
+            let enrolledIds;
+            if (isFinalized) {
+                const examEnrolledRows = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
+                    examid: `eq.${parseInt(selExam)}`,
+                    employeeid: `eq.${user.employeeid}`,
+                    classid: `eq.${sec.classid}`,
+                    sectionid: `eq.${sec.sectionid}`,
+                    subjectid: `eq.${sec.subjectid}`,
+                    select: 'studentid',
+                });
+                enrolledIds = new Set(examEnrolledRows.map(r => r.studentid));
+                existing.forEach(ans => enrolledIds.add(ans.studentid));
+            } else {
+                enrolledIds = new Set(stuScRows.map(r => r.studentid));
+                existing.forEach(ans => enrolledIds.add(ans.studentid));
+            }
 
             const enrolled = Array.from(enrolledIds).map(id => {
                 const s = stuList.find(st => st.studentid === id);
@@ -281,6 +297,18 @@ export default function EditMarks() {
         if (!sec) return;
         setIsSaving(true);
         try {
+            const examStatusRows = await rest('questions_exams_employee_subjects_sections_tbl', {
+                examid: `eq.${parseInt(selExam)}`,
+                employeeid: `eq.${user.employeeid}`,
+                classid: `eq.${sec.classid}`,
+                sectionid: `eq.${sec.sectionid}`,
+                subjectid: `eq.${sec.subjectid}`,
+                select: 'status',
+                limit: 1,
+            }).catch(() => []);
+            const examStatus = (examStatusRows?.[0]?.status || '').toLowerCase();
+            const examIsFinalized = ['marked', 'completed', 'inprogress', 'submitted'].includes(examStatus);
+
             let saved = 0;
             for (const stu of students) {
                 const existingEnr = await rest('students_exams_employees_section_subjects_classes_semisters_cur', {
@@ -292,7 +320,7 @@ export default function EditMarks() {
                     subjectid: `eq.${sec.subjectid}`,
                     select: 'studentid',
                 });
-                if (!existingEnr?.length) {
+                if (!existingEnr?.length && !examIsFinalized) {
                     await insert('students_exams_employees_section_subjects_classes_semisters_cur', {
                         studentid: stu.studentid,
                         examid: parseInt(selExam),

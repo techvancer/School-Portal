@@ -48,6 +48,7 @@ export default function Header({ toggleSidebar, isOpen, openProfile }) {
             {/* Left: hamburger + branding */}
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                 <button
+                    title={isOpen ? 'Close Menu' : 'Open Menu'}
                     onClick={toggleSidebar}
                     className="p-2 rounded-lg hover:bg-white/10 text-white transition-colors flex-shrink-0"
                 >
@@ -124,8 +125,9 @@ export default function Header({ toggleSidebar, isOpen, openProfile }) {
                 </div>
 
                 {/* Avatar */}
-                <div 
+                <div
                   onClick={openProfile}
+                  title="View Profile"
                   className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border-2 border-white/40 overflow-hidden cursor-pointer flex-shrink-0 transition-transform hover:scale-105 active:scale-95"
                 >
                     <img
