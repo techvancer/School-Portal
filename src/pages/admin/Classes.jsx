@@ -83,8 +83,8 @@ export default function AdminClasses() {
       setClasses(classRows);
       setSections(secRows);
       setStages([...new Map(stageRows.map((s) => [s.stageid, s])).values()]);
-      setDivisions(divRows || []);
-      setCurriculums(curRows || []);
+      setDivisions([...new Map((divRows || []).map(d => [d.divisionid, d])).values()]);
+      setCurriculums([...new Map((curRows || []).map(c => [c.curriculumid, c])).values()]);
       setClassStages(csRows || []);
     } catch (e) {
       addToast(getErrorMessage(e, 'general'), 'error');
@@ -370,7 +370,14 @@ export default function AdminClasses() {
       addToast(t('classesCsvUploaded', lang), 'success');
       fetchData();
     } catch (err) {
-      addToast(getErrorMessage(err, 'general'), 'error');
+      const msg = (err.message || '').toLowerCase();
+      if (msg.includes('foreign') || msg.includes('violat') || msg.includes('constraint') || msg.includes('fk_')) {
+        addToast('Upload failed: one or more rows have an invalid Division/Curriculum combination. Ensure all referenced data is set up correctly.', 'error');
+      } else if (msg.includes('duplicate') || msg.includes('unique') || msg.includes('23505')) {
+        addToast('Upload failed: one or more class combinations already exist in the system.', 'error');
+      } else {
+        addToast(err.message || 'Failed to upload classes. Please try again.', 'error');
+      }
     } finally {
       setIsLoading(false);
     }

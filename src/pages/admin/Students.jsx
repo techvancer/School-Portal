@@ -58,6 +58,8 @@ export default function AdminStudents() {
   const [csvErrorModal, setCsvErrorModal] = useState({ show: false, errors: [] });
   const [csvConfirmModal, setCsvConfirmModal] = useState({ show: false, rows: [], fileName: '' });
   const [deleteModal, setDeleteModal] = useState({ open: false, student: null });
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
   const { sorted: sortedStudents, sortCol, sortDir, handleSort } = useSortable(students, 'studentid');
   const { columnSearch, activeSearch, setActiveSearch, setColumnSearch, applyColumnSearch } = useColumnSearch();
 
@@ -158,7 +160,7 @@ export default function AdminStudents() {
 
   async function createStudent(payload) {
     const newStudentId = await nextId('students_tbl', 'studentid');
-    const [newStu] = await insert('students_tbl', {
+    const studentData = {
       studentid: newStudentId,
       studentfirstname_ar: payload.studentfirstname_ar || null,
       studentfirstname_en: payload.studentfirstname_en || null,
@@ -175,7 +177,19 @@ export default function AdminStudents() {
       parentemail: payload.parentemail || null,
       parentmobile: payload.parentmobile || null,
       parent_position: payload.parent_position || null,
-    });
+    };
+    let newStu;
+    try {
+      [newStu] = await insert('students_tbl', studentData);
+    } catch (insertErr) {
+      const em = (insertErr.message || '').toLowerCase();
+      // parentemail has a unique DB constraint — if it fires, retry without parentemail
+      if ((em.includes('unique') || em.includes('duplicate')) && em.includes('parentemail')) {
+        [newStu] = await insert('students_tbl', { ...studentData, parentemail: null });
+      } else {
+        throw insertErr;
+      }
+    }
     try {
       await insert('students_sections_classes_tbl', {
         studentid: newStu.studentid,
@@ -411,6 +425,8 @@ export default function AdminStudents() {
   const divisionOptions = [{ value: 'All', label: t('allDivisions', lang) }, ...divisions.map((d) => ({ value: String(d.divisionid), label: getField(d, 'divisionname', 'divisionname_en', lang) || d.divisionname || `Division ${d.divisionid}` }))];
   const curriculumOptions = [{ value: 'All', label: t('allCurriculums', lang) }, ...curriculums.map((c) => ({ value: String(c.curriculumid), label: getField(c, 'curriculumname', 'curriculumname_en', lang) || c.curriculumname || `Curriculum ${c.curriculumid}` }))];
 
+  // Reset to page 1 whenever filters or search change
+  useEffect(() => { setPage(1); }, [search, applied, columnSearch]);
 
     useEffect(() => {
         if (!hasApplied) return;
@@ -484,7 +500,7 @@ export default function AdminStudents() {
                 <tr><td colSpan={10} className="px-6 py-12 text-center text-[#94a3b8]"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={10} className="px-6 py-12 text-center text-[#94a3b8]">{t('noData', lang)}</td></tr>
-              ) : filtered.map((s) => (
+              ) : filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE).map((s) => (
 (
                   <tr key={s.studentid} className="hover:bg-[#f8fafc] transition-colors">
                     <td className="px-4 py-3 text-center"><span className="text-xs font-mono font-bold text-[#94a3b8] bg-slate-100 px-2 py-1 rounded">#{s.studentid}</span></td>
@@ -503,9 +519,18 @@ export default function AdminStudents() {
             </tbody>
           </table>
         </div>
-        <div className="p-4 bg-slate-50/50 border-t border-[#e2e8f0] flex items-center">
-          <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider mr-3">{t('total', lang)}</span>
-          <div className="px-3 py-1 bg-white rounded-lg border border-[#e2e8f0] text-xs font-black text-[#0f172a] shadow-sm">{filtered.length} {t('rows', lang)}</div>
+        <div className="p-4 bg-slate-50/50 border-t border-[#e2e8f0] flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-[#64748b] uppercase tracking-wider">{t('total', lang)}</span>
+            <div className="px-3 py-1 bg-white rounded-lg border border-[#e2e8f0] text-xs font-black text-[#0f172a] shadow-sm">{filtered.length} {t('rows', lang)}</div>
+          </div>
+          {filtered.length > ITEMS_PER_PAGE && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 rounded-lg border border-[#e2e8f0] text-xs font-bold text-[#64748b] disabled:opacity-40 hover:bg-slate-50">‹ {isAr ? 'السابق' : 'Prev'}</button>
+              <span className="text-xs text-[#64748b]">{page} / {Math.ceil(filtered.length / ITEMS_PER_PAGE)}</span>
+              <button onClick={() => setPage(p => Math.min(Math.ceil(filtered.length / ITEMS_PER_PAGE), p + 1))} disabled={page >= Math.ceil(filtered.length / ITEMS_PER_PAGE)} className="px-3 py-1.5 rounded-lg border border-[#e2e8f0] text-xs font-bold text-[#64748b] disabled:opacity-40 hover:bg-slate-50">{isAr ? 'التالي' : 'Next'} ›</button>
+            </div>
+          )}
         </div>
       </div>
 

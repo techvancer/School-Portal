@@ -47,7 +47,7 @@ export default function AdminAssignments() {
                 rest('classes_tbl', { select: '*' }),
                 rest('sections_tbl', { select: '*' }),
                 rest('stages_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
-                rest('subjects_tbl', { select: '*' }),
+                dbQuery('subjects_tbl?select=*&order=subjectid.asc'),
                 rest('employee_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
                 rest('students_tbl', { select: '*' }),
                 rest('students_sections_classes_tbl', { schoolid: `eq.${user.schoolid}`, branchid: `eq.${user.branchid}`, select: '*' }),
@@ -63,7 +63,7 @@ export default function AdminAssignments() {
             setSectionClasses(clRows);
             setSections(secRows);
             setStages([...new Map(stgRows.map(s => [s.stageid, s])).values()]);
-            setCurriculums(curRows);
+            setCurriculums([...new Map((curRows || []).map(c => [c.curriculumid, c])).values()]);
             setSubjects(subRows);
 
             const teacherIds = new Set(empTypesRows.filter(t => t.typeid === 1).map(t => t.employeeid));
